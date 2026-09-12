@@ -4,12 +4,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import app.models  # noqa: F401  (imports every model so metadata is complete)
 from app.config import settings
 from app.models.base import Base
-
-# Import every model module here so Base.metadata is fully populated
-# before autogenerate compares it against the database.
-# from app.models import user, artist, rating  # noqa: F401
 
 config = context.config
 
