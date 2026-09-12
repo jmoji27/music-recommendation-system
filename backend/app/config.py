@@ -16,6 +16,10 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
 
+    # Fernet key (Fernet.generate_key()) used to encrypt Spotify tokens at
+    # rest before writing them to the users table.
+    token_encryption_key: str = ""
+
     jwt_secret: str = "change-me-in-.env"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
