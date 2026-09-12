@@ -67,15 +67,32 @@ def upgrade() -> None:
     )
     op.create_index("ix_tracks_spotify_id", "tracks", ["spotify_id"], unique=True)
 
+    # A single table for ratings/reviews, comments, and likes, discriminated
+    # by `type`. type='review' targets exactly one of artist/album/track
+    # (exclusive arc). type IN ('comment','like') targets a parent
+    # interaction instead (the review, or another comment for a like) —
+    # Letterboxd-style: you comment on/like a specific review, not the
+    # music entity directly.
     op.create_table(
-        "reviews",
+        "interactions",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "type",
+            sa.Enum("review", "comment", "like", name="interaction_type"),
+            nullable=False,
+        ),
         sa.Column("artist_id", sa.Integer(), sa.ForeignKey("artists.id", ondelete="CASCADE"), nullable=True),
         sa.Column("album_id", sa.Integer(), sa.ForeignKey("albums.id", ondelete="CASCADE"), nullable=True),
         sa.Column("track_id", sa.Integer(), sa.ForeignKey("tracks.id", ondelete="CASCADE"), nullable=True),
+        sa.Column(
+            "parent_interaction_id",
+            sa.Integer(),
+            sa.ForeignKey("interactions.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
         sa.Column("stars", sa.SmallInteger(), nullable=True),
-        sa.Column("body", sa.Text(), nullable=True),
+        sa.Column("content", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column(
             "updated_at",
@@ -84,56 +101,44 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "num_nonnulls(artist_id, album_id, track_id) = 1", name="review_exactly_one_target"
+            "("
+            "  type = 'review'"
+            "  AND num_nonnulls(artist_id, album_id, track_id) = 1"
+            "  AND parent_interaction_id IS NULL"
+            ") OR ("
+            "  type IN ('comment', 'like')"
+            "  AND parent_interaction_id IS NOT NULL"
+            "  AND artist_id IS NULL AND album_id IS NULL AND track_id IS NULL"
+            ")",
+            name="interaction_target_shape",
         ),
-        sa.CheckConstraint("stars IS NOT NULL OR body IS NOT NULL", name="review_has_stars_or_body"),
-        sa.CheckConstraint("stars IS NULL OR stars BETWEEN 1 AND 5", name="review_stars_range"),
-    )
-    op.create_index(
-        "uq_review_user_artist", "reviews", ["user_id", "artist_id"], unique=True,
-        postgresql_where=sa.text("artist_id IS NOT NULL"),
-    )
-    op.create_index(
-        "uq_review_user_album", "reviews", ["user_id", "album_id"], unique=True,
-        postgresql_where=sa.text("album_id IS NOT NULL"),
-    )
-    op.create_index(
-        "uq_review_user_track", "reviews", ["user_id", "track_id"], unique=True,
-        postgresql_where=sa.text("track_id IS NOT NULL"),
-    )
-
-    op.create_table(
-        "comments",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column(
-            "review_id", sa.Integer(), sa.ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False
+        sa.CheckConstraint(
+            "type != 'review' OR stars IS NOT NULL OR content IS NOT NULL",
+            name="interaction_review_has_stars_or_content",
         ),
-        sa.Column("body", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-
-    op.create_table(
-        "likes",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column(
-            "review_id", sa.Integer(), sa.ForeignKey("reviews.id", ondelete="CASCADE"), nullable=True
+        sa.CheckConstraint("stars IS NULL OR stars BETWEEN 1 AND 5", name="interaction_stars_range"),
+        sa.CheckConstraint(
+            "type != 'comment' OR content IS NOT NULL", name="interaction_comment_has_content"
         ),
-        sa.Column(
-            "comment_id", sa.Integer(), sa.ForeignKey("comments.id", ondelete="CASCADE"), nullable=True
-        ),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("num_nonnulls(review_id, comment_id) = 1", name="like_exactly_one_target"),
+        sa.CheckConstraint("type != 'like' OR content IS NULL", name="interaction_like_has_no_content"),
     )
     op.create_index(
-        "uq_like_user_review", "likes", ["user_id", "review_id"], unique=True,
-        postgresql_where=sa.text("review_id IS NOT NULL"),
+        "uq_interaction_user_artist_review", "interactions", ["user_id", "artist_id"], unique=True,
+        postgresql_where=sa.text("type = 'review' AND artist_id IS NOT NULL"),
     )
     op.create_index(
-        "uq_like_user_comment", "likes", ["user_id", "comment_id"], unique=True,
-        postgresql_where=sa.text("comment_id IS NOT NULL"),
+        "uq_interaction_user_album_review", "interactions", ["user_id", "album_id"], unique=True,
+        postgresql_where=sa.text("type = 'review' AND album_id IS NOT NULL"),
     )
+    op.create_index(
+        "uq_interaction_user_track_review", "interactions", ["user_id", "track_id"], unique=True,
+        postgresql_where=sa.text("type = 'review' AND track_id IS NOT NULL"),
+    )
+    op.create_index(
+        "uq_interaction_user_like_parent", "interactions", ["user_id", "parent_interaction_id"], unique=True,
+        postgresql_where=sa.text("type = 'like'"),
+    )
+    op.create_index("ix_interaction_parent", "interactions", ["parent_interaction_id"])
 
     op.create_table(
         "follows",
@@ -171,9 +176,8 @@ def downgrade() -> None:
     # on upgrade — it needs an explicit drop here.
     sa.Enum(name="time_range").drop(op.get_bind(), checkfirst=True)
     op.drop_table("follows")
-    op.drop_table("likes")
-    op.drop_table("comments")
-    op.drop_table("reviews")
+    op.drop_table("interactions")
+    sa.Enum(name="interaction_type").drop(op.get_bind(), checkfirst=True)
     op.drop_table("tracks")
     op.drop_table("albums")
     op.drop_table("artists")

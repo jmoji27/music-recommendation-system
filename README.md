@@ -66,16 +66,32 @@ curl http://localhost:8000/health
 
 Implemented in `backend/app/models/` with an initial Alembic migration
 (`backend/alembic/versions/c0b6e28d1d3b_initial_schema.py`):
-`users`, `artists`, `albums`, `tracks`, `reviews` (the Letterboxd-style
-rating+review log entry), `comments`, `likes`, `follows`,
+`users`, `artists`, `albums`, `tracks`, `interactions`, `follows`,
 `listening_snapshots`.
 
-`reviews` and `likes` use an **exclusive-arc** pattern instead of a generic
-`entity_type`/`entity_id` pair: separate nullable FK columns
-(`artist_id`/`album_id`/`track_id` on reviews; `review_id`/`comment_id` on
-likes) plus a `CHECK (num_nonnulls(...) = 1)` constraint. Costs a few
-unused columns per row but keeps real foreign-key integrity, which a
-polymorphic `entity_id` column can't give you.
+`artists`/`albums`/`tracks` are a local cache keyed by Spotify's own IDs,
+populated **on demand** — an artist is only fetched from Spotify and
+upserted here the first time a user looks it up, not bulk-synced ahead of
+time. Trade-off: searching for an artist nobody's looked up yet has to
+hit Spotify's search API live rather than querying the local DB.
+
+`interactions` is a single table for ratings/reviews, comments, and
+likes, discriminated by `type`:
+- `type='review'` — a top-level log entry. Targets exactly one of
+  `artist_id`/`album_id`/`track_id` (exclusive arc: nullable FK columns +
+  a `CHECK (num_nonnulls(...) = 1)` constraint, instead of a generic
+  `entity_type`/`entity_id` pair — keeps real referential integrity).
+  Has `stars` and/or `content` (you can just log a rating, or write about
+  it too).
+- `type IN ('comment', 'like')` — a reply. Targets `parent_interaction_id`
+  (another row in the same table — the review, or a comment for a like)
+  instead of the music entity directly, matching how Letterboxd actually
+  works: you comment on/like someone's specific review, not the album
+  page itself. `comment` requires `content`; `like` has none.
+
+Collapsing reviews/comments/likes into one table means a feed query is a
+single scan (`interactions` ordered by `created_at`, filtered to people
+you follow) instead of a `UNION` across three tables.
 
 The migration was hand-written and verified with `alembic upgrade head
 --sql` / `alembic downgrade base --sql` (offline mode, no live DB
