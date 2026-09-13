@@ -35,6 +35,14 @@ def build_authorize_url(state: str) -> str:
         "redirect_uri": settings.spotify_redirect_uri,
         "scope": " ".join(SCOPES),
         "state": state,
+        # Without this, Spotify silently re-approves and redirects back
+        # if the browser already has an active Spotify session that
+        # previously granted this app access — meaning "log out, then
+        # connect again" would just log back into the same account with
+        # no prompt. show_dialog forces the consent screen to reappear
+        # (with a "not you?" option), so a second person on the same
+        # browser actually gets a chance to switch accounts.
+        "show_dialog": "true",
     }
     return f"{AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
 

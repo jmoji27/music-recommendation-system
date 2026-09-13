@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.db import get_db
 from app.models.user import User
+from app.services.interactions import get_conversations_for_albums
 from app.services.spotify_sync import (
     get_now_playing,
     get_top_albums_for_user,
@@ -46,3 +47,22 @@ async def top_artists(
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     return await get_top_artists_for_user(db, user, time_range=time_range)
+
+
+@router.get("/me/top-albums/conversations")
+async def top_album_conversations(
+    time_range: str = "medium_term",
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Of the user's own top albums, only the ones that already have
+    reviews/comments in our database — "what are people saying about
+    the albums you listen to most" — each with its full review thread.
+    """
+    albums = await get_top_albums_for_user(db, user, time_range=time_range)
+    conversations = await get_conversations_for_albums(db, [album["spotify_id"] for album in albums])
+
+    albums_by_spotify_id = {album["spotify_id"]: album for album in albums}
+    for conversation in conversations:
+        conversation["album"] = albums_by_spotify_id[conversation["spotify_album_id"]]
+    return conversations

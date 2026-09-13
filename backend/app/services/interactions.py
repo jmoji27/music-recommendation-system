@@ -116,6 +116,20 @@ async def list_album_reviews(db: AsyncSession, spotify_album_id: str) -> list[di
     return results
 
 
+async def get_conversations_for_albums(db: AsyncSession, spotify_album_ids: list[str]) -> list[dict]:
+    """Given a list of album spotify_ids (e.g. the user's own top
+    albums), returns only the ones that already have reviews/comments in
+    our database, each with its full review thread — "what are people
+    saying about the albums you listen to most."
+    """
+    conversations = []
+    for spotify_album_id in spotify_album_ids:
+        reviews = await list_album_reviews(db, spotify_album_id)
+        if reviews:
+            conversations.append({"spotify_album_id": spotify_album_id, "reviews": reviews})
+    return conversations
+
+
 async def create_comment(db: AsyncSession, user: User, review_id: int, content: str) -> dict:
     review = await db.get(Interaction, review_id)
     if review is None or review.type != InteractionType.REVIEW:

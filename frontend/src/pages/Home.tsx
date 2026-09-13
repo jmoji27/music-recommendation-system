@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
 import { api, loginUrl } from "../api/client";
-import type { AlbumSummary, ArtistCard as ArtistCardType, TopTrackCard } from "../types";
+import type { AlbumConversation, AlbumSummary, ArtistCard as ArtistCardType, TopTrackCard } from "../types";
 import { AlbumCard } from "../components/AlbumCard";
 import { TrackCard } from "../components/TrackCard";
 import { ArtistCard } from "../components/ArtistCard";
+import { ConversationCard } from "../components/ConversationCard";
 
 export function Home() {
   const { user, loading } = useAuth();
@@ -33,6 +34,7 @@ function Dashboard() {
   const [albums, setAlbums] = useState<AlbumSummary[] | null>(null);
   const [tracks, setTracks] = useState<TopTrackCard[] | null>(null);
   const [artists, setArtists] = useState<ArtistCardType[] | null>(null);
+  const [conversations, setConversations] = useState<AlbumConversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,11 +42,13 @@ function Dashboard() {
       api.get<AlbumSummary[]>("/me/top-albums"),
       api.get<TopTrackCard[]>("/me/top-tracks"),
       api.get<ArtistCardType[]>("/me/top-artists"),
+      api.get<AlbumConversation[]>("/me/top-albums/conversations"),
     ])
-      .then(([albumsRes, tracksRes, artistsRes]) => {
+      .then(([albumsRes, tracksRes, artistsRes, conversationsRes]) => {
         setAlbums(albumsRes);
         setTracks(tracksRes);
         setArtists(artistsRes);
+        setConversations(conversationsRes);
       })
       .catch(() => setError("Couldn't load your Spotify data. Try refreshing."));
   }, []);
@@ -53,6 +57,21 @@ function Dashboard() {
 
   return (
     <div className="dashboard">
+      <section>
+        <h2>Conversations on your top albums</h2>
+        {conversations === null ? (
+          <p className="muted">Loading…</p>
+        ) : conversations.length === 0 ? (
+          <p className="muted">No reviews yet on albums you listen to — be the first to leave one.</p>
+        ) : (
+          <div className="conversation-list">
+            {conversations.map((conversation) => (
+              <ConversationCard key={conversation.spotify_album_id} conversation={conversation} />
+            ))}
+          </div>
+        )}
+      </section>
+
       <Section title="Your top albums" empty="No albums yet — keep listening on Spotify." items={albums}>
         {(album) => <AlbumCard key={album.id} album={album} />}
       </Section>

@@ -65,3 +65,9 @@ export interface ReviewItem {
   like_count: number;
   comments: CommentItem[];
 }
+
+export interface AlbumConversation {
+  spotify_album_id: string;
+  album: AlbumSummary;
+  reviews: ReviewItem[];
+}

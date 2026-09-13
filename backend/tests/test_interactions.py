@@ -123,3 +123,56 @@ async def test_list_reviews_for_unknown_album_returns_empty(client):
     response = await client.get("/albums/some_never_seen_album/reviews")
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_top_album_conversations_only_includes_albums_with_reviews(client):
+    await log_in_test_user(client, spotify_id="conversations_user")
+
+    with respx.mock(assert_all_called=False) as mock:
+        _mock_album_lookup(mock)
+        review_response = await client.post("/albums/album_x/reviews", json={"stars": 4, "content": "Solid."})
+    assert review_response.status_code == 201
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post("https://accounts.spotify.com/api/token").mock(
+            return_value=Response(200, json={"access_token": "user-token", "token_type": "Bearer", "expires_in": 3600})
+        )
+        mock.get("https://api.spotify.com/v1/me/top/tracks").mock(
+            return_value=Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": "track_reviewed_album",
+                            "name": "Track On Reviewed Album",
+                            "duration_ms": 200000,
+                            "artists": [{"id": "artist_x", "name": "Artist X"}],
+                            "album": ALBUM_DETAIL_RESPONSE,
+                        },
+                        {
+                            "id": "track_unreviewed_album",
+                            "name": "Track On Unreviewed Album",
+                            "duration_ms": 180000,
+                            "artists": [{"id": "artist_y", "name": "Artist Y"}],
+                            "album": {
+                                "id": "album_y",
+                                "name": "Untouched Album",
+                                "release_date": "2019-01-01",
+                                "images": [],
+                            },
+                        },
+                    ]
+                },
+            )
+        )
+
+        response = await client.get("/me/top-albums/conversations")
+
+    assert response.status_code == 200
+    conversations = response.json()
+    assert len(conversations) == 1
+    assert conversations[0]["spotify_album_id"] == "album_x"
+    assert conversations[0]["album"]["name"] == "Test Album X"
+    assert len(conversations[0]["reviews"]) == 1
+    assert conversations[0]["reviews"][0]["content"] == "Solid."
