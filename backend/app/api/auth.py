@@ -70,3 +70,17 @@ async def callback(
     response.delete_cookie(_OAUTH_STATE_COOKIE)
     response.set_cookie(_SESSION_COOKIE, session_token, httponly=True, samesite="lax")
     return response
+
+
+@router.post("/logout")
+async def logout() -> Response:
+    # Our session is a stateless, signed JWT — there's no server-side
+    # session record to revoke. "Logout" just tells the browser to
+    # forget the cookie; the token itself would still verify as valid
+    # if somehow replayed, until it naturally expires
+    # (access_token_expire_minutes, currently 60 min). That's an
+    # accepted trade-off for a token this short-lived, not an oversight —
+    # a real revocation list would need server-side state we don't have.
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(_SESSION_COOKIE)
+    return response

@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.models.spotify_entities import Album, Artist, Track
 from app.models.user import User
+from tests.conftest import log_in_test_user
 
 
 @pytest.mark.asyncio
@@ -114,5 +115,21 @@ async def test_full_login_and_now_playing_flow(client, db_session):
 
 @pytest.mark.asyncio
 async def test_now_playing_requires_auth(client):
+    response = await client.get("/me/now-playing")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_session_cookie(client):
+    await log_in_test_user(client, spotify_id="logout_test_user")
+    assert client.cookies.get("session") is not None
+
+    logout_response = await client.post("/auth/spotify/logout")
+    assert logout_response.status_code == 204
+    # httpx's cookie jar honors the clearing Set-Cookie the same way a
+    # real browser would, so this proves the cookie is actually gone,
+    # not just that the endpoint returned success.
+    assert client.cookies.get("session") is None
+
     response = await client.get("/me/now-playing")
     assert response.status_code == 401
