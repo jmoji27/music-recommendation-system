@@ -1,0 +1,22 @@
+"""Public catalog browsing — search and album lookup. No login required:
+these use Spotify's Client Credentials flow (app-level, not user-scoped),
+since search results and album metadata aren't personal data.
+"""
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_db
+from app.services.spotify_sync import get_album_with_tracks, search_albums
+
+router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+@router.get("/albums/search")
+async def search(q: str, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await search_albums(db, q)
+
+
+@router.get("/albums/{spotify_album_id}")
+async def album_detail(spotify_album_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    return await get_album_with_tracks(db, spotify_album_id)

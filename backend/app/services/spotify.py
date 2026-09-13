@@ -5,6 +5,7 @@ Spotify and returns raw JSON. Turning that JSON into local rows lives in
 spotify_sync.py, so this stays easy to unit-test with a mocked HTTP layer.
 """
 
+import time
 import urllib.parse
 
 import httpx
@@ -73,6 +74,28 @@ async def get_current_user_profile(access_token: str) -> dict:
         return response.json()
 
 
+async def get_top_tracks(access_token: str, time_range: str = "medium_term", limit: int = 20) -> list[dict]:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/me/top/tracks",
+            params={"time_range": time_range, "limit": limit},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+        return response.json()["items"]
+
+
+async def get_top_artists(access_token: str, time_range: str = "medium_term", limit: int = 20) -> list[dict]:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/me/top/artists",
+            params={"time_range": time_range, "limit": limit},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+        return response.json()["items"]
+
+
 async def get_currently_playing(access_token: str) -> dict | None:
     """None means "nothing is playing" (Spotify returns 204 for that)."""
     async with httpx.AsyncClient() as client:
@@ -84,3 +107,58 @@ async def get_currently_playing(access_token: str) -> dict | None:
         return None
     response.raise_for_status()
     return response.json()
+
+
+# ── App-level (Client Credentials) access, for public catalog lookups ──
+#
+# Search and "get album/artist by id" are public catalog data, not tied to
+# any specific user, so they use Spotify's Client Credentials flow (the
+# backend authenticating as itself) instead of a logged-in user's token.
+# One token is shared process-wide and refreshed when it's close to
+# expiring — simple in-memory cache, fine for a single-process deploy.
+
+_app_token: str | None = None
+_app_token_expires_at: float = 0.0
+
+
+async def _get_app_access_token() -> str:
+    global _app_token, _app_token_expires_at
+
+    if _app_token and time.monotonic() < _app_token_expires_at - 30:
+        return _app_token
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            TOKEN_URL,
+            data={"grant_type": "client_credentials"},
+            auth=(settings.spotify_client_id, settings.spotify_client_secret),
+        )
+        response.raise_for_status()
+        token_data = response.json()
+
+    _app_token = token_data["access_token"]
+    _app_token_expires_at = time.monotonic() + token_data["expires_in"]
+    return _app_token
+
+
+async def search_albums(query: str, limit: int = 10) -> list[dict]:
+    token = await _get_app_access_token()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/search",
+            params={"q": query, "type": "album", "limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        return response.json()["albums"]["items"]
+
+
+async def get_album(spotify_album_id: str) -> dict:
+    token = await _get_app_access_token()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/albums/{spotify_album_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        return response.json()

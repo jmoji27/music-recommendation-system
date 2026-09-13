@@ -44,9 +44,14 @@ class Interaction(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     type: Mapped[InteractionType] = mapped_column(Enum(InteractionType, name="interaction_type"))
 
-    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"))
-    album_id: Mapped[int | None] = mapped_column(ForeignKey("albums.id", ondelete="CASCADE"))
-    track_id: Mapped[int | None] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    # RESTRICT (not CASCADE): the monthly cache-retention job deletes
+    # artists/albums/tracks with zero interactions. If its "zero
+    # interactions" check is ever wrong, RESTRICT makes Postgres refuse
+    # the delete with a loud IntegrityError instead of silently
+    # cascade-deleting someone's real review/comment/like.
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="RESTRICT"))
+    album_id: Mapped[int | None] = mapped_column(ForeignKey("albums.id", ondelete="RESTRICT"))
+    track_id: Mapped[int | None] = mapped_column(ForeignKey("tracks.id", ondelete="RESTRICT"))
 
     parent_interaction_id: Mapped[int | None] = mapped_column(
         ForeignKey("interactions.id", ondelete="CASCADE")

@@ -118,26 +118,64 @@ the environment it was built in. Run it for real against your local
 Postgres with `alembic upgrade head` once `docker compose up -d` is
 running.
 
+## Cache retention (planned)
+
+Cached artists/albums/tracks with zero interactions after 6 months are
+meant to be deleted by a scheduled job (not built yet — needs a hosting
+decision first, since it needs to run on a schedule independent of
+whether the web process is awake). The schema is already safe for this:
+`cached_at` columns (added in the second migration) give the job a
+reference point, and `interactions.artist_id`/`album_id`/`track_id` use
+`ON DELETE RESTRICT` rather than `CASCADE` — if the job's "zero
+interactions" check is ever wrong, Postgres refuses the delete with an
+error instead of silently destroying a real review/comment/like. "Zero
+interactions" means zero of *any* interaction type (review, comment, or
+like) — a plain star rating with no written text still counts.
+
+## No global charts — Spotify doesn't allow it for new apps
+
+Originally planned: seed the catalog with a monthly top-100
+songs/albums sync so new users see something browsable instead of an
+empty search box. Tested live against Spotify with real credentials —
+`/browse/new-releases`, `/browse/featured-playlists`, `/browse/categories`,
+and even Spotify's own "Top 50 - Global" playlist ID all return
+403/404. Spotify locked these behind "Extended Quota Mode" for new
+developer apps in late 2024; it's not something this app can fix.
+
+Instead: `/me/top-tracks` and `/me/top-artists` (below) populate an
+interactive card UI from the *logged-in user's own* Spotify data right
+after login — no global chart needed, and arguably better UX since it's
+personalized from the start.
+
 ## Status
 
 Done:
-- Data model + initial migration, verified against a live Postgres
-  (constraints, cascades, and both migration directions all tested for
-  real, not just compiled).
+- Data model + migrations, verified against a live Postgres (constraints,
+  cascades/restricts, and both migration directions all tested for real,
+  not just compiled).
 - Spotify OAuth (`/auth/spotify/login`, `/auth/spotify/callback`) with
   encrypted token storage and CSRF-protected state.
-- `/me/now-playing` — fetches the current track from Spotify, lazily
-  caching the artist/album/track. Verified end-to-end with Spotify
-  mocked (respx) against the real schema — this caught a real bug
-  (building the response after `db.commit()` tripped SQLAlchemy's
-  `expire_on_commit`), since fixed.
-- Not yet verified against the *real* Spotify API (needs a Spotify
-  Developer app — see setup above).
+- `/me/now-playing`, `/me/top-tracks`, `/me/top-artists` — fetch from
+  Spotify and lazily cache the artist/album/track. Verified with Spotify
+  mocked (respx) against the real schema.
+- `/catalog/albums/search`, `/catalog/albums/{spotify_id}` — public
+  catalog search/lookup (Client Credentials flow, no login needed).
+  Verified against the *real* Spotify API (searched "Madonna Ray of
+  Light", fetched the full 13-track album, confirmed correct FK linkage
+  in Postgres).
+- `/me/now-playing`/`/me/top-*` are NOT yet verified against the real
+  API — that needs an actual browser login (Spotify's consent screen
+  can't be automated), which you can try yourself now that real
+  credentials are in `.env`: visit
+  `http://127.0.0.1:8000/auth/spotify/login`.
 
 Next steps:
-1. Sync job for top artists/genres/tracks → populates
-   `listening_snapshots`.
-2. Ratings/reviews/comments/follows/feed endpoints (the `interactions`
+1. Cache-retention job (see above) — blocked on picking a hosting/
+   scheduling approach.
+2. Multi-type (track/artist/album) search for type-ahead, and wiring
+   search into the `interactions` table so users can actually
+   rate/review something they searched for.
+3. Ratings/reviews/comments/follows/feed endpoints (the `interactions`
    table already models these).
-3. Recommendation module + Gemini integration.
-4. Frontend.
+4. Recommendation module + Gemini integration.
+5. Frontend.
