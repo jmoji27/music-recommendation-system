@@ -12,12 +12,20 @@ service later if needed.
 
 ```
 backend/app/
-  api/               auth.py (Spotify OAuth), deps.py (current-user dependency),
-                      playback.py (now-playing) — social/recommendations routes land here next
+  api/               auth.py (Spotify OAuth + logout), deps.py (current-user dependency),
+                      catalog.py (public search/album lookup), playback.py (now-playing,
+                      top-tracks/albums/artists), interactions.py (reviews/comments/likes),
+                      users.py (GET /me profile)
   services/          spotify.py (raw API client), token_service.py (refresh),
-                      spotify_sync.py (Spotify JSON -> cached rows)
+                      spotify_sync.py (Spotify JSON -> cached rows), interactions.py
   security.py        Fernet token encryption, session JWT, signed OAuth state
   models/            SQLAlchemy models (see Data model below)
+
+frontend/            React (Vite + TypeScript). src/pages: Home (landing when logged
+                     out, dashboard cards when logged in), Search, AlbumDetail
+                     (tracklist + reviews/comments/likes). src/context/AuthContext
+                     checks GET /me on load. Talks to the backend via fetch with
+                     credentials: "include" (cookie-based session).
 ```
 
 - **Database:** PostgreSQL (relational — the social graph and ratings/reviews
@@ -79,6 +87,18 @@ curl http://localhost:8000/health
    during `/auth/spotify/login`, and browsers treat `localhost` and
    `127.0.0.1` as different origins, so mixing them breaks the cookie
    check.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Open `http://127.0.0.1:5173` — **not `localhost:5173`**, for the same
+reason as above. The backend's CORS config (`FRONTEND_ORIGIN` in
+`.env`) and cookie handling both assume `127.0.0.1` throughout.
 
 ## Data model
 
@@ -164,10 +184,22 @@ Done:
   Light", fetched the full 13-track album, confirmed correct FK linkage
   in Postgres).
 - Real login verified live: real Spotify account, real user row created,
-  real encrypted tokens. `/me/top-tracks`/`/me/top-artists`/`/me/top-albums`
-  are wired up and unit-tested (mocked Spotify) but not yet exercised
-  live end-to-end with a real session — worth doing next time you're
-  testing in the browser.
+  real encrypted tokens.
+- `POST /auth/spotify/logout` — clears the session cookie. It's a
+  stateless signed JWT with no server-side session record, so this
+  can't revoke the token itself, only tell the browser to forget it;
+  a copied token would still verify until its 60-minute expiry.
+  Accepted trade-off, not an oversight.
+- **Frontend** (`frontend/`, React + Vite + TypeScript): landing page,
+  a dashboard of your top albums/tracks/artists as cards, search with
+  debounced type-ahead, and an album page with tracklist + reviews/
+  comments/likes. Verified live in a real (headless) browser against
+  the real backend and a real Spotify account — not just "it compiles":
+  confirmed CORS works cross-origin, confirmed the actual card UI
+  renders with real cover art/data, confirmed posting a review through
+  the real form works. This is how a real bug got caught: every "top
+  artist" card was showing a blank placeholder image instead of the
+  artist's photo (see below).
 - `POST /albums/{spotify_id}/reviews`, `GET /albums/{spotify_id}/reviews`,
   `POST /reviews/{id}/comments`, `POST /reviews/{id}/like`,
   `POST /comments/{id}/like` — the actual rate/review/comment/like
@@ -193,6 +225,15 @@ to reintroduce elsewhere:
    (would have failed on literally every insert); pre-emptively fixed the
    same latent bug on `ListeningSnapshot.time_range` too, since it hadn't
    been exercised by any code yet but had the identical pattern.
+3. **Artist enrichment gap, caught visually in the browser check**:
+   `_get_or_create_artist` only set genres/images when *creating* a row.
+   An artist first cached from a partial stub (id/name only — what
+   now-playing/top-tracks/album tracklists give) stayed permanently
+   incomplete even after a richer source (top-artists) saw the same
+   artist later, because the "already exists" branch just returned it
+   as-is. Every card in "Your top artists" showed a blank placeholder
+   image until this was fixed to enrich in place
+   (`tests/test_spotify_sync_enrichment.py`).
 
 Known, deliberate gap: nothing currently stops liking your own review —
 worth a product decision on whether that should be blocked.
@@ -204,4 +245,3 @@ Next steps:
 3. Extend reviews/comments/likes to artists and tracks, not just albums
    (currently album-only).
 4. Recommendation module + Gemini integration.
-5. Frontend.

@@ -17,21 +17,27 @@ def _first_image_url(images: list[dict] | None) -> str | None:
 
 
 async def _get_or_create_artist(db: AsyncSession, artist_data: dict) -> Artist:
+    """Some callers (currently-playing, album tracklists, top-tracks) only
+    have a partial artist stub (id/name only) — genres/images are only
+    present when the caller already has full artist data (top-artists,
+    album/artist detail lookups). If an existing row was cached from a
+    partial stub and this call has richer data, enrich it in place
+    rather than leaving it permanently incomplete — otherwise an artist
+    first seen via a track listing would show a blank image/genre
+    forever, even after a richer source became available.
+    """
     existing = await db.scalar(select(Artist).where(Artist.spotify_id == artist_data["id"]))
+    genres = artist_data.get("genres", [])
+    image_url = _first_image_url(artist_data.get("images"))
+
     if existing is not None:
+        if genres and not existing.genres:
+            existing.genres = genres
+        if image_url and not existing.image_url:
+            existing.image_url = image_url
         return existing
 
-    # Some callers (currently-playing, album tracklists) only have a
-    # partial artist stub (id/name only) — genres/images are only present
-    # when the caller already has full artist data (e.g. top-artists).
-    # TODO: enrich already-cached partial rows when richer data becomes
-    # available (e.g. a future GET /artists/{id} call from an artist page).
-    artist = Artist(
-        spotify_id=artist_data["id"],
-        name=artist_data["name"],
-        genres=artist_data.get("genres", []),
-        image_url=_first_image_url(artist_data.get("images")),
-    )
+    artist = Artist(spotify_id=artist_data["id"], name=artist_data["name"], genres=genres, image_url=image_url)
     db.add(artist)
     await db.flush()
     return artist

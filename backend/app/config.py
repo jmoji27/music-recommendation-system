@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # rest before writing them to the users table.
     token_encryption_key: str = ""
 
+    # The React dev server's origin — needed for CORS since it's a
+    # different port than the backend (127.0.0.1:5173 vs :8000), which
+    # makes it cross-origin even though it's same-site.
+    frontend_origin: str = "http://127.0.0.1:5173"
+
     jwt_secret: str = "change-me-in-.env"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
