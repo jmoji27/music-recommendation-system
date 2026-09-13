@@ -12,7 +12,9 @@ class Settings(BaseSettings):
 
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
-    spotify_redirect_uri: str = "http://localhost:8000/auth/spotify/callback"
+    # Spotify requires an explicit loopback IP literal for local dev —
+    # "localhost" is rejected outright, only 127.0.0.1 / [::1] are allowed.
+    spotify_redirect_uri: str = "http://127.0.0.1:8000/auth/spotify/callback"
 
     gemini_api_key: str = ""
 

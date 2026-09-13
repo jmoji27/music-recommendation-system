@@ -12,10 +12,12 @@ service later if needed.
 
 ```
 backend/app/
-  auth/            Spotify OAuth login + our own JWT session
-  spotify_sync/    Pull + cache top artists/tracks/genres, currently playing
-  social/          Ratings, reviews, comments, likes, follows, feed
-  recommendations/ Taste breakdown + LLM-generated summary & suggestions
+  api/               auth.py (Spotify OAuth), deps.py (current-user dependency),
+                      playback.py (now-playing) — social/recommendations routes land here next
+  services/          spotify.py (raw API client), token_service.py (refresh),
+                      spotify_sync.py (Spotify JSON -> cached rows)
+  security.py        Fernet token encryption, session JWT, signed OAuth state
+  models/            SQLAlchemy models (see Data model below)
 ```
 
 - **Database:** PostgreSQL (relational — the social graph and ratings/reviews
@@ -62,6 +64,22 @@ uvicorn app.main:app --reload
 curl http://localhost:8000/health
 ```
 
+### Spotify OAuth setup
+
+1. Create an app at the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2. Add `http://127.0.0.1:8000/auth/spotify/callback` as a Redirect URI —
+   **not** `localhost`. Spotify rejects `localhost` outright now; only an
+   explicit loopback IP literal (`127.0.0.1` or `[::1]`) is accepted for
+   local dev.
+3. Put the Client ID/Secret into `backend/.env`
+   (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`).
+4. **Always use `http://127.0.0.1:8000/...` in the browser, not
+   `localhost:8000`**, once you're testing the OAuth flow — the CSRF
+   protection on `/auth/spotify/callback` uses a same-origin cookie set
+   during `/auth/spotify/login`, and browsers treat `localhost` and
+   `127.0.0.1` as different origins, so mixing them breaks the cookie
+   check.
+
 ## Data model
 
 Implemented in `backend/app/models/` with an initial Alembic migration
@@ -102,12 +120,24 @@ running.
 
 ## Status
 
-Data model + initial migration are in place. No endpoints or frontend
-yet. Next steps:
-1. Spotify OAuth flow (`/auth/spotify/login`, `/auth/spotify/callback`) +
-   token encryption.
-2. Sync job for top artists/genres/tracks → populates
+Done:
+- Data model + initial migration, verified against a live Postgres
+  (constraints, cascades, and both migration directions all tested for
+  real, not just compiled).
+- Spotify OAuth (`/auth/spotify/login`, `/auth/spotify/callback`) with
+  encrypted token storage and CSRF-protected state.
+- `/me/now-playing` — fetches the current track from Spotify, lazily
+  caching the artist/album/track. Verified end-to-end with Spotify
+  mocked (respx) against the real schema — this caught a real bug
+  (building the response after `db.commit()` tripped SQLAlchemy's
+  `expire_on_commit`), since fixed.
+- Not yet verified against the *real* Spotify API (needs a Spotify
+  Developer app — see setup above).
+
+Next steps:
+1. Sync job for top artists/genres/tracks → populates
    `listening_snapshots`.
-3. Ratings/reviews/comments/follows/feed endpoints.
-4. Recommendation module + Gemini integration.
-5. Frontend.
+2. Ratings/reviews/comments/follows/feed endpoints (the `interactions`
+   table already models these).
+3. Recommendation module + Gemini integration.
+4. Frontend.
