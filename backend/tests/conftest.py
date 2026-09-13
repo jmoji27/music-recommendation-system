@@ -14,7 +14,8 @@ behind, even though the endpoints under test call commit().
 """
 
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+import respx
+from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -29,7 +30,10 @@ test_engine = create_async_engine(settings.database_url, poolclass=NullPool)
 async def db_session():
     async with test_engine.connect() as connection:
         trans = await connection.begin()
-        session = AsyncSession(bind=connection, join_transaction_mode="create_savepoint")
+        # expire_on_commit=False to match app.db's real session factory —
+        # otherwise tests enforce stricter behavior than production
+        # actually has (objects expiring after commit here but not there).
+        session = AsyncSession(bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False)
         yield session
         await session.close()
         await trans.rollback()
@@ -45,3 +49,34 @@ async def client(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+async def log_in_test_user(client, spotify_id: str = "spotify_test_user") -> None:
+    """Drives the mocked OAuth login/callback so a test can act as an
+    authenticated user without a real browser/Spotify consent screen.
+    """
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post("https://accounts.spotify.com/api/token").mock(
+            return_value=Response(
+                200,
+                json={
+                    "access_token": "fake-access-token",
+                    "refresh_token": "fake-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+            )
+        )
+        mock.get("https://api.spotify.com/v1/me").mock(
+            return_value=Response(
+                200,
+                json={"id": spotify_id, "display_name": "Test User", "email": f"{spotify_id}@example.com", "images": []},
+            )
+        )
+
+        login_response = await client.get("/auth/spotify/login", follow_redirects=False)
+        state = login_response.cookies["oauth_state"]
+        callback_response = await client.get(
+            "/auth/spotify/callback", params={"code": "fake-code", "state": state}
+        )
+        assert callback_response.status_code == 200

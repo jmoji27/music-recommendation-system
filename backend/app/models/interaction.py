@@ -42,7 +42,14 @@ class Interaction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    type: Mapped[InteractionType] = mapped_column(Enum(InteractionType, name="interaction_type"))
+    # values_callable: SQLAlchemy's Enum type defaults to persisting a
+    # Python enum member's *name* (e.g. "REVIEW"), not its *value*
+    # ("review") — but the Postgres enum type (created in the migration)
+    # only has the lowercase values. Without this, every insert fails
+    # with "invalid input value for enum interaction_type".
+    type: Mapped[InteractionType] = mapped_column(
+        Enum(InteractionType, name="interaction_type", values_callable=lambda enum_cls: [member.value for member in enum_cls])
+    )
 
     # RESTRICT (not CASCADE): the monthly cache-retention job deletes
     # artists/albums/tracks with zero interactions. If its "zero

@@ -161,6 +161,33 @@ async def get_top_tracks_for_user(db: AsyncSession, user: User, time_range: str 
     return summaries
 
 
+async def get_top_albums_for_user(db: AsyncSession, user: User, time_range: str = "medium_term") -> list[dict]:
+    """Spotify has no direct "top albums" endpoint, so this derives one
+    from the user's top tracks — deduped by album, in the order each
+    album's first (highest-ranked) track appears. This is what powers
+    the album-card UI shown right after login.
+    """
+    access_token = await get_valid_access_token(db, user)
+    # A wider track pull gives better album coverage/variety than just
+    # asking for the top ~20, since many will share the same album.
+    items = await spotify.get_top_tracks(access_token, time_range=time_range, limit=50)
+
+    seen_spotify_album_ids: set[str] = set()
+    summaries = []
+    for track_data in items:
+        album_data = track_data["album"]
+        if album_data["id"] in seen_spotify_album_ids:
+            continue
+        seen_spotify_album_ids.add(album_data["id"])
+
+        artist = await _get_or_create_artist(db, track_data["artists"][0])
+        album = await _get_or_create_album(db, album_data, artist)
+        summaries.append(_album_summary(album, artist))
+
+    await db.commit()
+    return summaries
+
+
 async def get_top_artists_for_user(db: AsyncSession, user: User, time_range: str = "medium_term") -> list[dict]:
     access_token = await get_valid_access_token(db, user)
     items = await spotify.get_top_artists(access_token, time_range=time_range)
@@ -171,6 +198,23 @@ async def get_top_artists_for_user(db: AsyncSession, user: User, time_range: str
         summaries.append(_artist_summary(artist))
     await db.commit()
     return summaries
+
+
+async def ensure_album_cached(db: AsyncSession, spotify_album_id: str) -> Album:
+    """Returns the cached Album row for this Spotify id, fetching and
+    caching it (with its tracks) first if it isn't cached yet. Used
+    when someone reviews an album they haven't already searched/viewed.
+    """
+    existing = await db.scalar(select(Album).where(Album.spotify_id == spotify_album_id))
+    if existing is not None:
+        return existing
+
+    await get_album_with_tracks(db, spotify_album_id)
+    # get_album_with_tracks returns a plain dict (see the expire_on_commit
+    # note above) rather than the ORM row, so re-select it fresh.
+    album = await db.scalar(select(Album).where(Album.spotify_id == spotify_album_id))
+    assert album is not None
+    return album
 
 
 async def get_now_playing(db: AsyncSession, user: User) -> dict | None:

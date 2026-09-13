@@ -163,19 +163,45 @@ Done:
   Verified against the *real* Spotify API (searched "Madonna Ray of
   Light", fetched the full 13-track album, confirmed correct FK linkage
   in Postgres).
-- `/me/now-playing`/`/me/top-*` are NOT yet verified against the real
-  API — that needs an actual browser login (Spotify's consent screen
-  can't be automated), which you can try yourself now that real
-  credentials are in `.env`: visit
-  `http://127.0.0.1:8000/auth/spotify/login`.
+- Real login verified live: real Spotify account, real user row created,
+  real encrypted tokens. `/me/top-tracks`/`/me/top-artists`/`/me/top-albums`
+  are wired up and unit-tested (mocked Spotify) but not yet exercised
+  live end-to-end with a real session — worth doing next time you're
+  testing in the browser.
+- `POST /albums/{spotify_id}/reviews`, `GET /albums/{spotify_id}/reviews`,
+  `POST /reviews/{id}/comments`, `POST /reviews/{id}/like`,
+  `POST /comments/{id}/like` — the actual rate/review/comment/like
+  endpoints on top of `interactions`. Verified both with mocked-Spotify
+  tests AND live against the real API/DB (posted a real 5-star review
+  on *Ray of Light* from the real logged-in account, confirmed the
+  duplicate-review and duplicate-like constraints both reject correctly
+  with 409s).
+- `/me/top-albums` — derived from top tracks (deduped by album), since
+  Spotify has no direct "top albums" endpoint.
+
+Two real bugs the tests caught, worth knowing about since they're easy
+to reintroduce elsewhere:
+1. **Test/prod session config mismatch, not a code bug per se**: the app's
+   real session factory (`app/db.py`) already sets `expire_on_commit=False`,
+   but the test fixture didn't match it, so tests were enforcing stricter
+   behavior than production actually has. Fixed by aligning them
+   (`tests/conftest.py`).
+2. **Enum serialization**: SQLAlchemy's `Enum` type persists a Python enum
+   member's *name* ("REVIEW") by default, not its *value* ("review") —
+   silently mismatching the lowercase values the Postgres enum type
+   actually has, unless `values_callable` is set. Hit on `Interaction.type`
+   (would have failed on literally every insert); pre-emptively fixed the
+   same latent bug on `ListeningSnapshot.time_range` too, since it hadn't
+   been exercised by any code yet but had the identical pattern.
+
+Known, deliberate gap: nothing currently stops liking your own review —
+worth a product decision on whether that should be blocked.
 
 Next steps:
 1. Cache-retention job (see above) — blocked on picking a hosting/
    scheduling approach.
-2. Multi-type (track/artist/album) search for type-ahead, and wiring
-   search into the `interactions` table so users can actually
-   rate/review something they searched for.
-3. Ratings/reviews/comments/follows/feed endpoints (the `interactions`
-   table already models these).
+2. Multi-type (track/artist/album) search for type-ahead.
+3. Extend reviews/comments/likes to artists and tracks, not just albums
+   (currently album-only).
 4. Recommendation module + Gemini integration.
 5. Frontend.

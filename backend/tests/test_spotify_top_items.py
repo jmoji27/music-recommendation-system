@@ -9,34 +9,7 @@ from httpx import Response
 from sqlalchemy import select
 
 from app.models.spotify_entities import Album, Artist, Track
-
-
-async def _log_in(client) -> None:
-    with respx.mock(assert_all_called=False) as mock:
-        mock.post("https://accounts.spotify.com/api/token").mock(
-            return_value=Response(
-                200,
-                json={
-                    "access_token": "fake-access-token",
-                    "refresh_token": "fake-refresh-token",
-                    "expires_in": 3600,
-                    "token_type": "Bearer",
-                },
-            )
-        )
-        mock.get("https://api.spotify.com/v1/me").mock(
-            return_value=Response(
-                200,
-                json={"id": "spotify_test_user_2", "display_name": "Test User", "email": "t2@example.com", "images": []},
-            )
-        )
-
-        login_response = await client.get("/auth/spotify/login", follow_redirects=False)
-        state = login_response.cookies["oauth_state"]
-        callback_response = await client.get(
-            "/auth/spotify/callback", params={"code": "fake-code", "state": state}
-        )
-        assert callback_response.status_code == 200
+from tests.conftest import log_in_test_user as _log_in
 
 
 @pytest.mark.asyncio
