@@ -24,8 +24,10 @@ async def login() -> RedirectResponse:
     # against the `state` query param Spotify sends back, so a
     # cross-site request forging the callback can't succeed without
     # also having set this cookie in the victim's browser.
+    # Must match create_oauth_state()'s expiry (30 min) — if the cookie
+    # died first, the callback would 400 even with a still-valid token.
     response.set_cookie(
-        _OAUTH_STATE_COOKIE, state, httponly=True, samesite="lax", max_age=600
+        _OAUTH_STATE_COOKIE, state, httponly=True, samesite="lax", max_age=1800
     )
     return response
 

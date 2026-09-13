@@ -44,8 +44,15 @@ def create_oauth_state() -> str:
     """A short-lived, signed CSRF token for the Spotify OAuth `state`
     parameter. Signed rather than looked up server-side, so it works
     without shared memory across restarts/multiple workers.
+
+    30 minutes, not something tighter: with show_dialog=true forcing a
+    real interactive consent screen (rather than an instant silent
+    redirect when Spotify already has a session), a first-time user has
+    to actually log into Spotify and read the permissions — 10 minutes
+    was too easy to blow past. This window only bounds a CSRF token, not
+    a credential, so a longer value doesn't weaken anything.
     """
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
     return jwt.encode({"purpose": "oauth_state", "exp": expires_at}, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
