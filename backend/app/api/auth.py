@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cookies import cookie_kwargs
 from app.db import get_db
 from app.models.user import User
 from app.security import create_oauth_state, create_session_token, encrypt_token, verify_oauth_state
@@ -26,9 +27,7 @@ async def login() -> RedirectResponse:
     # also having set this cookie in the victim's browser.
     # Must match create_oauth_state()'s expiry (30 min) — if the cookie
     # died first, the callback would 400 even with a still-valid token.
-    response.set_cookie(
-        _OAUTH_STATE_COOKIE, state, httponly=True, samesite="lax", max_age=1800
-    )
+    response.set_cookie(_OAUTH_STATE_COOKIE, state, httponly=True, max_age=1800, **cookie_kwargs())
     return response
 
 
@@ -69,8 +68,8 @@ async def callback(
     session_token = create_session_token(user.id)
     # No frontend to redirect into yet — plain confirmation response for now.
     response = Response(status_code=status.HTTP_200_OK, content="Logged in.")
-    response.delete_cookie(_OAUTH_STATE_COOKIE)
-    response.set_cookie(_SESSION_COOKIE, session_token, httponly=True, samesite="lax")
+    response.delete_cookie(_OAUTH_STATE_COOKIE, **cookie_kwargs())
+    response.set_cookie(_SESSION_COOKIE, session_token, httponly=True, **cookie_kwargs())
     return response
 
 
@@ -84,5 +83,5 @@ async def logout() -> Response:
     # accepted trade-off for a token this short-lived, not an oversight —
     # a real revocation list would need server-side state we don't have.
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    response.delete_cookie(_SESSION_COOKIE)
+    response.delete_cookie(_SESSION_COOKIE, **cookie_kwargs())
     return response

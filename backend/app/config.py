@@ -31,7 +31,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # "development" (default, matches local http://127.0.0.1) or
+    # "production" — controls cookie Secure/SameSite flags (see
+    # app/cookies.py). Set ENVIRONMENT=production on the real deployment.
+    environment: str = "development"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
 
 
 settings = Settings()
