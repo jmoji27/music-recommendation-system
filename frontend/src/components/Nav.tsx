@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { loginUrl } from "../api/client";
 
 export function Nav() {
   const { user, loading, logout } = useAuth();
@@ -18,7 +17,9 @@ export function Nav() {
             <button onClick={logout}>Log out</button>
           </>
         ) : (
-          <a href={loginUrl}>Connect with Spotify</a>
+          // Both providers are explained on the landing page — send
+          // people there to choose, rather than picking one for them.
+          <Link to="/">Log in</Link>
         )}
       </div>
     </nav>

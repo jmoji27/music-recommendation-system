@@ -92,6 +92,37 @@ button:disabled {
   margin: 16px auto 0;
 }
 
+.login-choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.login-choice {
+  max-width: 260px;
+  text-align: center;
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.login-note {
+  max-width: 480px;
+  margin: 24px auto 0;
+  font-size: 0.85rem;
+}
+
+.connect-prompt {
+  text-align: center;
+  padding: 40px 20px;
+  margin-bottom: 40px;
+}
+
 .hot-section {
   text-align: left;
   max-width: 900px;

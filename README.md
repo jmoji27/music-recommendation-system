@@ -88,6 +88,23 @@ curl http://localhost:8000/health
    `127.0.0.1` as different origins, so mixing them breaks the cookie
    check.
 
+### Google OAuth setup
+
+Google login has no user cap (unlike Spotify's Development Mode) — it's
+the account system for everyone who isn't one of the few Spotify
+testers. Setup:
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → APIs &
+   Services → Credentials → Create OAuth client ID → Web application.
+2. Add `http://127.0.0.1:8000/auth/google/callback` as an Authorized
+   redirect URI.
+3. Put the Client ID/Secret into `backend/.env`
+   (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
+
+No scope beyond basic profile/email is requested — we never call
+Google's API again after login, unlike Spotify where the token is kept
+for ongoing personalized data.
+
 ### Frontend
 
 ```bash
@@ -175,6 +192,19 @@ Done:
   not just compiled).
 - Spotify OAuth (`/auth/spotify/login`, `/auth/spotify/callback`) with
   encrypted token storage and CSRF-protected state.
+- Google OAuth (`/auth/google/login`, `/auth/google/callback`) — a
+  second, independent way to get an account, since Spotify's own login
+  is capped at 5 users in Development Mode. `users.spotify_id`/`google_id`
+  are both nullable with a `CHECK (num_nonnulls >= 1)` — an account
+  needs at least one identity, and a Google-only account can later
+  connect Spotify onto the *same* row rather than ending up split
+  across two accounts (verified: logging in with Google using an email
+  that matches an existing Spotify account links onto it). Personalized
+  endpoints (`/me/now-playing`, `/me/top-*`) 403 with a clear message
+  for accounts with no Spotify connected, via a global exception
+  handler (`SpotifyNotConnected` in `app/services/token_service.py`) —
+  verified the dashboard handles this gracefully in the browser rather
+  than showing a raw error.
 - `/me/now-playing`, `/me/top-tracks`, `/me/top-artists` — fetch from
   Spotify and lazily cache the artist/album/track. Verified with Spotify
   mocked (respx) against the real schema.

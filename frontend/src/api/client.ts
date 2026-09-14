@@ -36,4 +36,5 @@ export const api = {
     request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined }),
 };
 
-export const loginUrl = `${API_BASE}/auth/spotify/login`;
+export const spotifyLoginUrl = `${API_BASE}/auth/spotify/login`;
+export const googleLoginUrl = `${API_BASE}/auth/google/login`;

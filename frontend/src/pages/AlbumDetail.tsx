@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { api, ApiError, loginUrl } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { AlbumDetail as AlbumDetailType, ReviewItem } from "../types";
 
 export function AlbumDetail() {
@@ -50,7 +50,7 @@ export function AlbumDetail() {
           <ReviewForm spotifyId={spotifyId!} onSubmitted={loadReviews} />
         ) : (
           <p className="muted">
-            <a href={loginUrl}>Connect with Spotify</a> to leave a review.
+            <Link to="/">Log in</Link> to leave a review.
           </p>
         )}
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
-import { api, loginUrl } from "../api/client";
+import { api, googleLoginUrl, spotifyLoginUrl } from "../api/client";
 import type { AlbumConversation, AlbumSummary, ArtistCard as ArtistCardType, HotAlbum, TopTrackCard } from "../types";
 import { AlbumCard } from "../components/AlbumCard";
 import { TrackCard } from "../components/TrackCard";
@@ -13,42 +13,89 @@ export function Home() {
 
   if (loading) return null;
   if (!user) return <Landing />;
-  return <Dashboard />;
+  return <Dashboard hasSpotify={user.has_spotify} />;
 }
 
 function Landing() {
+  return (
+    <div className="landing">
+      <h1>Understand your music taste.</h1>
+      <p>
+        Rate, review, and comment on music — and see what other people think of what you listen to.
+      </p>
+
+      <div className="login-choices">
+        <div className="login-choice">
+          <a className="button" href={spotifyLoginUrl}>
+            Connect with Spotify
+          </a>
+          <p className="muted">
+            Get personalized recommendations, your top tracks/artists/albums, and what you're
+            currently listening to — based on your real Spotify taste.
+          </p>
+        </div>
+        <div className="login-choice">
+          <a className="button button-secondary" href={googleLoginUrl}>
+            Continue with Google
+          </a>
+          <p className="muted">
+            Create an account to search, rate, review, and comment — no personalized
+            recommendations though, since we won't have your listening data.
+          </p>
+        </div>
+      </div>
+      <p className="muted login-note">
+        Due to Spotify API limitations, only a small number of Spotify accounts can be connected
+        right now — contact us if you'd like to try the Spotify-personalized demo.
+      </p>
+
+      <HotRightNow />
+    </div>
+  );
+}
+
+function HotRightNow() {
   const [hotAlbums, setHotAlbums] = useState<HotAlbum[] | null>(null);
 
   useEffect(() => {
     api.get<HotAlbum[]>("/hot-albums").then(setHotAlbums);
   }, []);
 
-  return (
-    <div className="landing">
-      <h1>Understand your music taste.</h1>
-      <p>
-        Connect Spotify to see your top tracks, artists, and albums — and start rating, reviewing, and
-        comparing taste with others.
-      </p>
-      <a className="button" href={loginUrl}>
-        Connect with Spotify
-      </a>
+  if (!hotAlbums || hotAlbums.length === 0) return null;
 
-      {hotAlbums && hotAlbums.length > 0 && (
-        <section className="hot-section">
-          <h2>Hot right now</h2>
-          <div className="card-grid">
-            {hotAlbums.map((album) => (
-              <HotAlbumCard key={album.id} album={album} />
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
+  return (
+    <section className="hot-section">
+      <h2>Hot right now</h2>
+      <div className="card-grid">
+        {hotAlbums.map((album) => (
+          <HotAlbumCard key={album.id} album={album} />
+        ))}
+      </div>
+    </section>
   );
 }
 
-function Dashboard() {
+function Dashboard({ hasSpotify }: { hasSpotify: boolean }) {
+  if (!hasSpotify) {
+    return (
+      <div className="dashboard">
+        <section className="connect-prompt">
+          <h2>Unlock your personalized recommendations</h2>
+          <p className="muted">
+            Connect Spotify to see your top tracks, artists, and albums.
+          </p>
+          <a className="button" href={spotifyLoginUrl}>
+            Connect with Spotify
+          </a>
+        </section>
+        <HotRightNow />
+      </div>
+    );
+  }
+  return <PersonalizedDashboard />;
+}
+
+function PersonalizedDashboard() {
   const [albums, setAlbums] = useState<AlbumSummary[] | null>(null);
   const [tracks, setTracks] = useState<TopTrackCard[] | null>(null);
   const [artists, setArtists] = useState<ArtistCardType[] | null>(null);

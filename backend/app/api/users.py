@@ -13,4 +13,5 @@ async def get_me(user: User = Depends(get_current_user)) -> dict:
         "display_name": user.display_name,
         "email": user.email,
         "avatar_url": user.avatar_url,
+        "has_spotify": user.has_spotify,
     }

@@ -3,6 +3,7 @@ export interface UserProfile {
   display_name: string;
   email: string | null;
   avatar_url: string | null;
+  has_spotify: boolean;
 }
 
 export interface ArtistRef {

@@ -11,7 +11,17 @@ from app.services import spotify
 _EXPIRY_SAFETY_MARGIN = timedelta(seconds=30)
 
 
+class SpotifyNotConnected(Exception):
+    """Raised when a feature needing Spotify data (now-playing, top
+    tracks/artists/albums) is used by an account that signed up via
+    Google and never connected Spotify. Mapped to a 403 in main.py.
+    """
+
+
 async def get_valid_access_token(db: AsyncSession, user: User) -> str:
+    if not user.has_spotify:
+        raise SpotifyNotConnected()
+
     now = datetime.now(timezone.utc)
     if user.spotify_token_expires_at and user.spotify_token_expires_at - _EXPIRY_SAFETY_MARGIN > now:
         return decrypt_token(user.spotify_access_token_encrypted)
