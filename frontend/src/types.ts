@@ -66,6 +66,10 @@ export interface ReviewItem {
   comments: CommentItem[];
 }
 
+export interface HotAlbum extends AlbumSummary {
+  review_count: number;
+}
+
 export interface AlbumConversation {
   spotify_album_id: string;
   album: AlbumSummary;

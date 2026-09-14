@@ -92,6 +92,23 @@ button:disabled {
   margin: 16px auto 0;
 }
 
+.hot-section {
+  text-align: left;
+  max-width: 900px;
+  margin: 60px auto 0;
+}
+
+.hot-section h2 {
+  text-align: center;
+}
+
+.hot-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

@@ -77,7 +77,7 @@ async def _get_or_create_track(db: AsyncSession, track_data: dict, artist: Artis
     return track
 
 
-def _album_summary(album: Album, artist: Artist) -> dict:
+def album_summary(album: Album, artist: Artist) -> dict:
     return {
         "id": album.id,
         "spotify_id": album.spotify_id,
@@ -100,7 +100,7 @@ async def search_albums(db: AsyncSession, query: str) -> list[dict]:
     for album_data in results:
         artist = await _get_or_create_artist(db, album_data["artists"][0])
         album = await _get_or_create_album(db, album_data, artist)
-        summaries.append(_album_summary(album, artist))
+        summaries.append(album_summary(album, artist))
     await db.commit()
     return summaries
 
@@ -124,7 +124,7 @@ async def get_album_with_tracks(db: AsyncSession, spotify_album_id: str) -> dict
             {"id": track.id, "spotify_id": track.spotify_id, "name": track.name, "duration_ms": track.duration_ms}
         )
 
-    result = _album_summary(album, artist)
+    result = album_summary(album, artist)
     result["tracks"] = tracks
     await db.commit()
     return result
@@ -188,7 +188,7 @@ async def get_top_albums_for_user(db: AsyncSession, user: User, time_range: str 
 
         artist = await _get_or_create_artist(db, track_data["artists"][0])
         album = await _get_or_create_album(db, album_data, artist)
-        summaries.append(_album_summary(album, artist))
+        summaries.append(album_summary(album, artist))
 
     await db.commit()
     return summaries

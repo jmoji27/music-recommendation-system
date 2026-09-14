@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
 import { api, loginUrl } from "../api/client";
-import type { AlbumConversation, AlbumSummary, ArtistCard as ArtistCardType, TopTrackCard } from "../types";
+import type { AlbumConversation, AlbumSummary, ArtistCard as ArtistCardType, HotAlbum, TopTrackCard } from "../types";
 import { AlbumCard } from "../components/AlbumCard";
 import { TrackCard } from "../components/TrackCard";
 import { ArtistCard } from "../components/ArtistCard";
 import { ConversationCard } from "../components/ConversationCard";
+import { HotAlbumCard } from "../components/HotAlbumCard";
 
 export function Home() {
   const { user, loading } = useAuth();
@@ -16,6 +17,12 @@ export function Home() {
 }
 
 function Landing() {
+  const [hotAlbums, setHotAlbums] = useState<HotAlbum[] | null>(null);
+
+  useEffect(() => {
+    api.get<HotAlbum[]>("/hot-albums").then(setHotAlbums);
+  }, []);
+
   return (
     <div className="landing">
       <h1>Understand your music taste.</h1>
@@ -26,6 +33,17 @@ function Landing() {
       <a className="button" href={loginUrl}>
         Connect with Spotify
       </a>
+
+      {hotAlbums && hotAlbums.length > 0 && (
+        <section className="hot-section">
+          <h2>Hot right now</h2>
+          <div className="card-grid">
+            {hotAlbums.map((album) => (
+              <HotAlbumCard key={album.id} album={album} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
