@@ -13,6 +13,7 @@ export function Nav() {
         <Link to="/search">Search</Link>
         {loading ? null : user ? (
           <>
+            {user.has_spotify && <Link to="/taste">My Taste</Link>}
             <span className="nav-user">{user.display_name}</span>
             <button onClick={logout}>Log out</button>
           </>

@@ -104,6 +104,24 @@ async def get_top_artists(access_token: str, time_range: str = "medium_term", li
         return response.json()["items"]
 
 
+async def get_recently_played(access_token: str, limit: int = 50) -> list[dict]:
+    """Up to the last 50 played tracks with timestamps. This is the closest
+    thing to a "listening history" Spotify's public API exposes — there is
+    no endpoint for total/annual listening time (that's Wrapped-exclusive,
+    computed from Spotify's internal data, never exposed to third-party
+    apps). Any "time listened" stat built from this is an estimate over a
+    short recent window, not a real year-to-date total.
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/me/player/recently-played",
+            params={"limit": limit},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+        return response.json()["items"]
+
+
 async def get_currently_playing(access_token: str) -> dict | None:
     """None means "nothing is playing" (Spotify returns 204 for that)."""
     async with httpx.AsyncClient() as client:

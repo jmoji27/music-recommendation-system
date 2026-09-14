@@ -76,3 +76,15 @@ export interface AlbumConversation {
   album: AlbumSummary;
   reviews: ReviewItem[];
 }
+
+export interface TasteSummary {
+  genre_counts: Record<string, number>;
+  top_genre: string | null;
+  recent_minutes_listened: number;
+  recent_track_count: number;
+  top_artist_names: string[];
+}
+
+export type TasteRecommendation =
+  | { available: false }
+  | { available: true; summary: string; recommended_genres: string[]; recommended_artists: string[] };

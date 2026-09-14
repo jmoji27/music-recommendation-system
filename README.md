@@ -169,20 +169,33 @@ error instead of silently destroying a real review/comment/like. "Zero
 interactions" means zero of *any* interaction type (review, comment, or
 like) — a plain star rating with no written text still counts.
 
-## No global charts — Spotify doesn't allow it for new apps
+## What Spotify's API won't give us (verified live, not assumed)
 
-Originally planned: seed the catalog with a monthly top-100
-songs/albums sync so new users see something browsable instead of an
-empty search box. Tested live against Spotify with real credentials —
-`/browse/new-releases`, `/browse/featured-playlists`, `/browse/categories`,
-and even Spotify's own "Top 50 - Global" playlist ID all return
-403/404. Spotify locked these behind "Extended Quota Mode" for new
-developer apps in late 2024; it's not something this app can fix.
+Three real gaps found by actually testing against Spotify, each with a
+workaround already built rather than just documented:
 
-Instead: `/me/top-tracks` and `/me/top-artists` (below) populate an
-interactive card UI from the *logged-in user's own* Spotify data right
-after login — no global chart needed, and arguably better UX since it's
-personalized from the start.
+1. **No global charts.** `/browse/new-releases`, `/browse/featured-playlists`,
+   `/browse/categories`, even their own "Top 50 - Global" playlist ID —
+   all 403/404 for new developer apps (locked behind "Extended Quota
+   Mode" since late 2024). Workaround: `/me/top-tracks`/`/me/top-artists`
+   give a personalized card UI from the logged-in user's own data
+   instead — arguably better anyway — and `/hot-albums` (most-reviewed,
+   from our own `interactions` table) covers "something to look at
+   before logging in."
+2. **No annual listening time.** There's no "total minutes this year"
+   endpoint at all — that's Wrapped-exclusive, computed from data
+   Spotify never exposes to third-party apps. Workaround:
+   `/me/taste-summary`'s `recent_minutes_listened` is a real number
+   derived from the last ~50 plays (`get_recently_played`), honestly
+   labeled in the UI as a recent estimate, not a year total.
+3. **No artist genre tags, at all.** Verified directly against
+   `GET /artists/{id}` for Charli xcx (a hugely mainstream artist):
+   `genres: null`. Checked every one of the 94 real artists cached in
+   the database at the time: zero had any genre tag. Workaround:
+   Gemini classifies artist names into genres using its own knowledge
+   (`app/services/genre_classification.py`), cached onto the `Artist`
+   row itself so it's a one-time cost per artist shared across every
+   user, not a per-request LLM call.
 
 ## Status
 
@@ -268,10 +281,27 @@ to reintroduce elsewhere:
 Known, deliberate gap: nothing currently stops liking your own review —
 worth a product decision on whether that should be blocked.
 
+- **`/me/taste-summary`, `/me/recommendations`, and the `/taste` page**
+  (`google-genai` SDK, `gemini-3.8-flash`): genre pie chart (fed by
+  Gemini-classified genres, see above — the chart legitimately shows
+  "not enough genre data" when `GEMINI_API_KEY` isn't set, which is the
+  honest behavior, not a bug), a recent-listening estimate, and a
+  one-shot (no chat) AI taste summary + adjacent genre/artist
+  recommendations behind a "Generate" button. `/me/recommendations`
+  gracefully returns `{"available": false}` without an API key rather
+  than erroring — verified both paths live in the browser (screenshot
+  before/after), including the real structured-JSON parsing from a
+  mocked Gemini response in tests.
+- Fixed a real dependency conflict installing `google-genai`: it
+  requires `httpx>=0.28.1`, which silently upgraded httpx and broke
+  `respx`'s mocking across the *entire* test suite (15 unrelated tests
+  failed) until `respx` was upgraded to `0.23.1` too. Worth knowing:
+  installing an unrelated package can break testing infrastructure via
+  a shared transitive dependency.
+
 Next steps:
 1. Cache-retention job (see above) — blocked on picking a hosting/
    scheduling approach.
 2. Multi-type (track/artist/album) search for type-ahead.
 3. Extend reviews/comments/likes to artists and tracks, not just albums
    (currently album-only).
-4. Recommendation module + Gemini integration.

@@ -92,6 +92,103 @@ button:disabled {
   margin: 16px auto 0;
 }
 
+.taste-page h1 {
+  margin-bottom: 24px;
+}
+
+.taste-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.taste-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.taste-card h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.pie-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pie-legend {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
+.pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.stat-block {
+  text-align: center;
+  padding: 20px 0 8px;
+}
+
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.taste-caveat {
+  font-size: 0.8rem;
+  margin-top: 12px;
+}
+
+.recommendations-placeholder {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.recommendation-result p {
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.rec-columns {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+
+.rec-columns h3 {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.rec-columns ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .login-choices {
   display: flex;
   flex-wrap: wrap;
