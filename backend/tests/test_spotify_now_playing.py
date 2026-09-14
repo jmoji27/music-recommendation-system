@@ -9,6 +9,7 @@ import respx
 from httpx import Response
 from sqlalchemy import select
 
+from app.config import settings
 from app.models.spotify_entities import Album, Artist, Track
 from app.models.user import User
 from tests.conftest import log_in_test_user
@@ -83,9 +84,10 @@ async def test_full_login_and_now_playing_flow(client, db_session):
         state = login_response.cookies["oauth_state"]
 
         callback_response = await client.get(
-            "/auth/spotify/callback", params={"code": "fake-code", "state": state}
+            "/auth/spotify/callback", params={"code": "fake-code", "state": state}, follow_redirects=False
         )
-        assert callback_response.status_code == 200
+        assert callback_response.status_code == 302
+        assert callback_response.headers["location"] == settings.frontend_origin
         assert "session" in callback_response.cookies
 
         now_playing_response = await client.get("/me/now-playing")

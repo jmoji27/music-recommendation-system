@@ -7,6 +7,7 @@ import respx
 from httpx import Response
 from sqlalchemy import select
 
+from app.config import settings
 from app.models.user import User
 from tests.conftest import log_in_test_user
 
@@ -25,8 +26,12 @@ async def _log_in_with_google(client, sub: str, email: str, name: str = "Test Go
         _mock_google(mock, sub, email, name)
         login_response = await client.get("/auth/google/login", follow_redirects=False)
         state = login_response.cookies["oauth_state"]
-        callback_response = await client.get("/auth/google/callback", params={"code": "fake-code", "state": state})
-        assert callback_response.status_code == 200
+        callback_response = await client.get(
+            "/auth/google/callback", params={"code": "fake-code", "state": state}, follow_redirects=False
+        )
+        assert callback_response.status_code == 302
+        assert callback_response.headers["location"] == settings.frontend_origin
+        assert "session" in callback_response.cookies
 
 
 @pytest.mark.asyncio

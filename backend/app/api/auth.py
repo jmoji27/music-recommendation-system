@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.cookies import cookie_kwargs
 from app.db import get_db
 from app.models.user import User
@@ -66,8 +67,7 @@ async def callback(
     await db.refresh(user)
 
     session_token = create_session_token(user.id)
-    # No frontend to redirect into yet — plain confirmation response for now.
-    response = Response(status_code=status.HTTP_200_OK, content="Logged in.")
+    response = RedirectResponse(url=settings.frontend_origin, status_code=status.HTTP_302_FOUND)
     response.delete_cookie(_OAUTH_STATE_COOKIE, **cookie_kwargs())
     response.set_cookie(_SESSION_COOKIE, session_token, httponly=True, **cookie_kwargs())
     return response

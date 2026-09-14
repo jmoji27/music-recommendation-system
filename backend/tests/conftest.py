@@ -77,6 +77,10 @@ async def log_in_test_user(client, spotify_id: str = "spotify_test_user") -> Non
         login_response = await client.get("/auth/spotify/login", follow_redirects=False)
         state = login_response.cookies["oauth_state"]
         callback_response = await client.get(
-            "/auth/spotify/callback", params={"code": "fake-code", "state": state}
+            "/auth/spotify/callback", params={"code": "fake-code", "state": state}, follow_redirects=False
         )
-        assert callback_response.status_code == 200
+        # Redirects into the frontend now, rather than rendering a bare
+        # confirmation page on the backend's own origin.
+        assert callback_response.status_code == 302
+        assert callback_response.headers["location"] == settings.frontend_origin
+        assert "session" in callback_response.cookies
