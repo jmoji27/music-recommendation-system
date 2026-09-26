@@ -121,6 +121,8 @@ export interface ArtistCard {
 }
 
 export interface CommentItem {
+  edited: boolean;
+  liked_by_me: boolean;
   id: number;
   content: string;
   created_at: string;
@@ -129,6 +131,8 @@ export interface CommentItem {
 }
 
 export interface ReviewItem {
+  edited: boolean;
+  liked_by_me: boolean;
   id: number;
   stars: number | null;
   content: string | null;

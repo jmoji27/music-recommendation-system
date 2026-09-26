@@ -176,3 +176,172 @@ async def test_top_album_conversations_only_includes_albums_with_reviews(client)
     assert conversations[0]["album"]["name"] == "Test Album X"
     assert len(conversations[0]["reviews"]) == 1
     assert conversations[0]["reviews"][0]["content"] == "Solid."
+
+
+async def _review_as(client, spotify_id: str, **payload) -> int:
+    await log_in_test_user(client, spotify_id=spotify_id)
+    with respx.mock(assert_all_called=False) as mock:
+        _mock_album_lookup(mock)
+        response = await client.post("/albums/album_x/reviews", json=payload)
+    return response.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_edit_review_updates_and_marks_edited(client):
+    review_id = await _review_as(client, "editor_1", stars=3, content="Meh.")
+
+    response = await client.put(f"/reviews/{review_id}", json={"stars": 5, "content": "Grew on me."})
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["stars"], body["content"], body["edited"]) == (5, "Grew on me.", True)
+
+    listed = (await client.get("/albums/album_x/reviews")).json()[0]
+    assert listed["stars"] == 5 and listed["edited"] is True
+
+
+@pytest.mark.asyncio
+async def test_unedited_review_is_not_marked_edited(client):
+    await _review_as(client, "editor_2", stars=3)
+    assert (await client.get("/albums/album_x/reviews")).json()[0]["edited"] is False
+
+
+@pytest.mark.asyncio
+async def test_edit_review_can_drop_stars_but_not_everything(client):
+    review_id = await _review_as(client, "editor_3", stars=4, content="Nice.")
+    ok = await client.put(f"/reviews/{review_id}", json={"content": "Nice."})
+    assert ok.status_code == 200 and ok.json()["stars"] is None
+    empty = await client.put(f"/reviews/{review_id}", json={})
+    assert empty.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cannot_edit_or_delete_someone_elses_review(client):
+    review_id = await _review_as(client, "owner_1", stars=5, content="Mine.")
+    await log_in_test_user(client, spotify_id="intruder_1")
+
+    assert (await client.put(f"/reviews/{review_id}", json={"stars": 1})).status_code == 403
+    assert (await client.delete(f"/reviews/{review_id}")).status_code == 403
+
+    await log_in_test_user(client, spotify_id="owner_1")
+    listed = (await client.get("/albums/album_x/reviews")).json()[0]
+    assert listed["stars"] == 5 and listed["content"] == "Mine."
+
+
+@pytest.mark.asyncio
+async def test_edit_delete_require_login_and_404_for_missing(client):
+    assert (await client.put("/reviews/1", json={"stars": 1})).status_code == 401
+    assert (await client.delete("/reviews/1")).status_code == 401
+    await log_in_test_user(client, spotify_id="nobody_1")
+    assert (await client.put("/reviews/999999", json={"stars": 1})).status_code == 404
+    assert (await client.delete("/reviews/999999")).status_code == 404
+    assert (await client.delete("/comments/999999")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_review_removes_its_comments_and_likes(client, db_session):
+    from sqlalchemy import func, or_, select
+
+    from app.models.interaction import Interaction
+
+    review_id = await _review_as(client, "del_owner", stars=2)
+    await log_in_test_user(client, spotify_id="del_fan")
+    await client.post(f"/reviews/{review_id}/comments", json={"content": "hi"})
+    await client.post(f"/reviews/{review_id}/like")
+
+    await log_in_test_user(client, spotify_id="del_owner")
+    assert (await client.delete(f"/reviews/{review_id}")).status_code == 204
+
+    assert (await client.get("/albums/album_x/reviews")).json() == []
+    leftovers = await db_session.scalar(
+        select(func.count())
+        .select_from(Interaction)
+        .where(or_(Interaction.id == review_id, Interaction.parent_interaction_id == review_id))
+    )
+    assert leftovers == 0
+
+
+@pytest.mark.asyncio
+async def test_deleting_review_lets_you_review_again(client):
+    review_id = await _review_as(client, "again_1", stars=1)
+    await client.delete(f"/reviews/{review_id}")
+    with respx.mock(assert_all_called=False) as mock:
+        _mock_album_lookup(mock)
+        again = await client.post("/albums/album_x/reviews", json={"stars": 5})
+    assert again.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_comment_edit_and_delete_permissions(client):
+    review_id = await _review_as(client, "thread_owner", stars=4)
+    await log_in_test_user(client, spotify_id="thread_author")
+    comment_id = (await client.post(f"/reviews/{review_id}/comments", json={"content": "first"})).json()["id"]
+
+    edited = await client.put(f"/comments/{comment_id}", json={"content": "second"})
+    assert edited.status_code == 200
+    assert edited.json()["content"] == "second" and edited.json()["edited"] is True
+    assert (await client.put(f"/comments/{comment_id}", json={"content": ""})).status_code == 422
+
+    # A bystander can neither edit nor delete it.
+    await log_in_test_user(client, spotify_id="thread_bystander")
+    assert (await client.put(f"/comments/{comment_id}", json={"content": "x"})).status_code == 403
+    assert (await client.delete(f"/comments/{comment_id}")).status_code == 403
+
+    # The review's author can't rewrite it, but can remove it from their thread.
+    await log_in_test_user(client, spotify_id="thread_owner")
+    assert (await client.put(f"/comments/{comment_id}", json={"content": "x"})).status_code == 403
+    assert (await client.delete(f"/comments/{comment_id}")).status_code == 204
+    assert (await client.get("/albums/album_x/reviews")).json()[0]["comments"] == []
+
+
+@pytest.mark.asyncio
+async def test_comment_author_can_delete_own_comment(client):
+    review_id = await _review_as(client, "c_owner", stars=4)
+    await log_in_test_user(client, spotify_id="c_author")
+    comment_id = (await client.post(f"/reviews/{review_id}/comments", json={"content": "oops"})).json()["id"]
+    assert (await client.delete(f"/comments/{comment_id}")).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_unlike_review_and_comment(client):
+    review_id = await _review_as(client, "u_owner", stars=4)
+    await log_in_test_user(client, spotify_id="u_fan")
+    comment_id = (await client.post(f"/reviews/{review_id}/comments", json={"content": "c"})).json()["id"]
+    await client.post(f"/reviews/{review_id}/like")
+    await client.post(f"/comments/{comment_id}/like")
+
+    liked = (await client.get("/albums/album_x/reviews")).json()[0]
+    assert liked["liked_by_me"] is True and liked["like_count"] == 1
+    assert liked["comments"][0]["liked_by_me"] is True
+
+    assert (await client.delete(f"/reviews/{review_id}/like")).status_code == 204
+    assert (await client.delete(f"/comments/{comment_id}/like")).status_code == 204
+    # Idempotent.
+    assert (await client.delete(f"/reviews/{review_id}/like")).status_code == 204
+
+    after = (await client.get("/albums/album_x/reviews")).json()[0]
+    assert after["liked_by_me"] is False and after["like_count"] == 0
+    assert after["comments"][0]["liked_by_me"] is False and after["comments"][0]["like_count"] == 0
+
+    # And you can like again afterwards.
+    assert (await client.post(f"/reviews/{review_id}/like")).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_unlike_only_removes_your_own_like(client):
+    review_id = await _review_as(client, "ul_owner", stars=4)
+    await log_in_test_user(client, spotify_id="ul_a")
+    await client.post(f"/reviews/{review_id}/like")
+    await log_in_test_user(client, spotify_id="ul_b")
+    await client.post(f"/reviews/{review_id}/like")
+    await client.delete(f"/reviews/{review_id}/like")
+
+    assert (await client.get("/albums/album_x/reviews")).json()[0]["like_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_anonymous_listing_has_liked_by_me_false(client):
+    review_id = await _review_as(client, "anon_owner", stars=4)
+    await client.post(f"/reviews/{review_id}/like")
+    client.cookies.clear()
+    listed = (await client.get("/albums/album_x/reviews")).json()[0]
+    assert listed["liked_by_me"] is False and listed["like_count"] == 1

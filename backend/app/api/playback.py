@@ -60,7 +60,7 @@ async def top_album_conversations(
     the albums you listen to most" — each with its full review thread.
     """
     albums = await get_top_albums_for_user(db, user, time_range=time_range)
-    conversations = await get_conversations_for_albums(db, [album["spotify_id"] for album in albums])
+    conversations = await get_conversations_for_albums(db, [album["spotify_id"] for album in albums], user)
 
     albums_by_spotify_id = {album["spotify_id"]: album for album in albums}
     for conversation in conversations:

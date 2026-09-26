@@ -46,7 +46,7 @@ export function AlbumDetail() {
 
       <section>
         <h2>Reviews</h2>
-        {user ? (
+        {user && reviews?.some((r) => r.user.id === user.id) ? null : user ? (
           <ReviewForm spotifyId={spotifyId!} onSubmitted={loadReviews} />
         ) : (
           <p className="muted">
@@ -106,31 +106,45 @@ function ReviewForm({ spotifyId, onSubmitted }: { spotifyId: string; onSubmitted
 function Review({ review, onChanged }: { review: ReviewItem; onChanged: () => void }) {
   const { user } = useAuth();
   const [commentText, setCommentText] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editStars, setEditStars] = useState<number | null>(review.stars);
+  const [editContent, setEditContent] = useState(review.content ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const isMine = user?.id === review.user.id;
 
-  async function like() {
+  async function run(action: () => Promise<unknown>) {
+    setError(null);
     try {
-      await api.post(`/reviews/${review.id}/like`);
+      await action();
       onChanged();
-    } catch {
-      // Already liked — nothing to do, the count just won't move.
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
     }
+  }
+
+  const toggleLike = (path: string, liked: boolean) =>
+    run(() => (liked ? api.delete(path) : api.post(path)));
+
+  async function saveEdit(event: React.FormEvent) {
+    event.preventDefault();
+    await run(async () => {
+      await api.put(`/reviews/${review.id}`, { stars: editStars, content: editContent.trim() || null });
+      setEditing(false);
+    });
+  }
+
+  async function remove() {
+    if (!window.confirm("Delete this review? Its comments and likes will be deleted too.")) return;
+    await run(() => api.delete(`/reviews/${review.id}`));
   }
 
   async function submitComment(event: React.FormEvent) {
     event.preventDefault();
     if (!commentText.trim()) return;
-    await api.post(`/reviews/${review.id}/comments`, { content: commentText.trim() });
-    setCommentText("");
-    onChanged();
-  }
-
-  async function likeComment(commentId: number) {
-    try {
-      await api.post(`/comments/${commentId}/like`);
-      onChanged();
-    } catch {
-      // Already liked.
-    }
+    await run(async () => {
+      await api.post(`/reviews/${review.id}/comments`, { content: commentText.trim() });
+      setCommentText("");
+    });
   }
 
   return (
@@ -138,20 +152,58 @@ function Review({ review, onChanged }: { review: ReviewItem; onChanged: () => vo
       <div className="review-header">
         <strong>{review.user.display_name}</strong>
         {review.stars && <span>{"★".repeat(review.stars)}</span>}
+        {review.edited && <span className="muted edited-tag">(edited)</span>}
       </div>
-      {review.content && <p>{review.content}</p>}
-      <button onClick={like} disabled={!user}>
-        ♥ {review.like_count}
+
+      {editing ? (
+        <form className="review-form" onSubmit={saveEdit}>
+          <select
+            aria-label="Stars"
+            value={editStars ?? ""}
+            onChange={(event) => setEditStars(event.target.value ? Number(event.target.value) : null)}
+          >
+            <option value="">No rating</option>
+            {[5, 4, 3, 2, 1].map((n) => (
+              <option key={n} value={n}>
+                {"★".repeat(n)}
+              </option>
+            ))}
+          </select>
+          <textarea aria-label="Review text" value={editContent} onChange={(event) => setEditContent(event.target.value)} />
+          <button type="submit">Save</button>
+          <button type="button" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </form>
+      ) : (
+        review.content && <p>{review.content}</p>
+      )}
+
+      <button
+        onClick={() => toggleLike(`/reviews/${review.id}/like`, review.liked_by_me)}
+        disabled={!user}
+        aria-pressed={review.liked_by_me}
+        title={review.liked_by_me ? "Unlike" : "Like"}
+      >
+        {review.liked_by_me ? "♥" : "♡"} {review.like_count}
       </button>
+      {isMine && !editing && (
+        <>
+          <button onClick={() => setEditing(true)}>Edit</button>
+          <button onClick={remove}>Delete</button>
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
 
       <div className="comments">
         {review.comments.map((comment) => (
-          <div key={comment.id} className="comment">
-            <strong>{comment.user.display_name}</strong>: {comment.content}{" "}
-            <button onClick={() => likeComment(comment.id)} disabled={!user}>
-              ♥ {comment.like_count}
-            </button>
-          </div>
+          <CommentRow
+            key={comment.id}
+            comment={comment}
+            canModerate={isMine}
+            run={run}
+            toggleLike={toggleLike}
+          />
         ))}
         {user && (
           <form onSubmit={submitComment} className="comment-form">
@@ -165,6 +217,64 @@ function Review({ review, onChanged }: { review: ReviewItem; onChanged: () => vo
           </form>
         )}
       </div>
+    </div>
+  );
+}
+
+function CommentRow({
+  comment,
+  canModerate,
+  run,
+  toggleLike,
+}: {
+  comment: ReviewItem["comments"][number];
+  canModerate: boolean;
+  run: (action: () => Promise<unknown>) => Promise<void>;
+  toggleLike: (path: string, liked: boolean) => Promise<void>;
+}) {
+  const { user } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(comment.content);
+  const isMine = user?.id === comment.user.id;
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!text.trim()) return;
+    await run(async () => {
+      await api.put(`/comments/${comment.id}`, { content: text.trim() });
+      setEditing(false);
+    });
+  }
+
+  return (
+    <div className="comment">
+      <strong>{comment.user.display_name}</strong>:{" "}
+      {editing ? (
+        <form className="comment-form" onSubmit={save}>
+          <input type="text" aria-label="Comment text" value={text} onChange={(event) => setText(event.target.value)} />
+          <button type="submit">Save</button>
+          <button type="button" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          {comment.content}
+          {comment.edited && <span className="muted edited-tag"> (edited)</span>}{" "}
+        </>
+      )}
+      <button
+        onClick={() => toggleLike(`/comments/${comment.id}/like`, comment.liked_by_me)}
+        disabled={!user}
+        aria-pressed={comment.liked_by_me}
+        title={comment.liked_by_me ? "Unlike" : "Like"}
+      >
+        {comment.liked_by_me ? "♥" : "♡"} {comment.like_count}
+      </button>
+      {isMine && !editing && <button onClick={() => setEditing(true)}>Edit</button>}
+      {(isMine || canModerate) && !editing && (
+        <button onClick={() => run(() => api.delete(`/comments/${comment.id}`))}>Delete</button>
+      )}
     </div>
   );
 }

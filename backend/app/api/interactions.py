@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_user
 from app.db import get_db
 from app.models.interaction import InteractionType
 from app.models.user import User
@@ -26,6 +26,10 @@ class CommentCreate(BaseModel):
     content: str = Field(min_length=1)
 
 
+class CommentEdit(BaseModel):
+    content: str = Field(min_length=1)
+
+
 @router.post("/albums/{spotify_album_id}/reviews", status_code=status.HTTP_201_CREATED)
 async def create_album_review(
     spotify_album_id: str,
@@ -40,8 +44,10 @@ async def create_album_review(
 
 
 @router.get("/albums/{spotify_album_id}/reviews")
-async def list_album_reviews(spotify_album_id: str, db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await interactions_service.list_album_reviews(db, spotify_album_id)
+async def list_album_reviews(
+    spotify_album_id: str, viewer: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)
+) -> list[dict]:
+    return await interactions_service.list_album_reviews(db, spotify_album_id, viewer)
 
 
 @router.post("/reviews/{review_id}/comments", status_code=status.HTTP_201_CREATED)
@@ -79,3 +85,74 @@ async def like_comment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found.")
     except interactions_service.AlreadyLiked:
         raise HTTPException(status.HTTP_409_CONFLICT, "You've already liked this.")
+
+
+_NOT_YOURS = "You can only change your own posts."
+
+
+@router.put("/reviews/{review_id}")
+async def edit_review(
+    review_id: int, body: ReviewCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        return await interactions_service.edit_review(db, user, review_id, body.stars, body.content)
+    except interactions_service.TargetNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Review not found.")
+    except interactions_service.NotAllowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _NOT_YOURS)
+
+
+@router.delete("/reviews/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_review(
+    review_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> None:
+    try:
+        await interactions_service.delete_review(db, user, review_id)
+    except interactions_service.TargetNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Review not found.")
+    except interactions_service.NotAllowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _NOT_YOURS)
+
+
+@router.put("/comments/{comment_id}")
+async def edit_comment(
+    comment_id: int, body: CommentEdit, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        return await interactions_service.edit_comment(db, user, comment_id, body.content)
+    except interactions_service.TargetNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found.")
+    except interactions_service.NotAllowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _NOT_YOURS)
+
+
+@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_comment(
+    comment_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> None:
+    try:
+        await interactions_service.delete_comment(db, user, comment_id)
+    except interactions_service.TargetNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found.")
+    except interactions_service.NotAllowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _NOT_YOURS)
+
+
+@router.delete("/reviews/{review_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def unlike_review(
+    review_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> None:
+    try:
+        await interactions_service.unlike_interaction(db, user, review_id, InteractionType.REVIEW)
+    except interactions_service.TargetNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Review not found.")
+
+
+@router.delete("/comments/{comment_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def unlike_comment(
+    comment_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> None:
+    try:
+        await interactions_service.unlike_interaction(db, user, comment_id, InteractionType.COMMENT)
+    except interactions_service.TargetNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found.")
