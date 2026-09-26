@@ -8,6 +8,7 @@ import { Friends } from "./pages/Friends";
 import { Conversation } from "./pages/Conversation";
 import { Profile } from "./pages/Profile";
 import { RequireAuth } from "./components/RequireAuth";
+import { FriendsPanel } from "./components/FriendsPanel";
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
           />
         </Routes>
       </main>
+      <FriendsPanel />
     </>
   );
 }

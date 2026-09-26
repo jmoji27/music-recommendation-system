@@ -7,7 +7,14 @@ import { TrackChip } from "./TrackChip";
 
 /** Starting a conversation means recommending a song — that's the whole
  *  rule, so this panel is the only way in. */
-export function RecommendPanel({ toUserId, toName }: { toUserId: number; toName: string }) {
+interface Props {
+  toUserId: number;
+  toName: string;
+  /** Called with the new conversation's id. Default: navigate to its page. */
+  onStarted?: (conversationId: number) => void;
+}
+
+export function RecommendPanel({ toUserId, toName, onStarted }: Props) {
   const navigate = useNavigate();
   const [track, setTrack] = useState<TrackSummary | null>(null);
   const [body, setBody] = useState("");
@@ -24,7 +31,8 @@ export function RecommendPanel({ toUserId, toName }: { toUserId: number; toName:
         track_spotify_id: track.spotify_id,
         body: body.trim() || null,
       });
-      navigate(`/messages/${result.conversation_id}`);
+      if (onStarted) onStarted(result.conversation_id);
+      else navigate(`/messages/${result.conversation_id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't send. Try again.");
       setSending(false);

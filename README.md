@@ -326,6 +326,15 @@ worth a product decision on whether that should be blocked.
   - "What to comment on" on your profile is the most-reviewed albums —
     the requested global Top-50 isn't available (see the Spotify gaps
     section above).
+  - **Docked friends panel** (`FriendsPanel`), on every page while logged
+    in: your conversations and an "Add people" search, with chats opening
+    inside the panel (the full `/friends` and `/messages/:id` pages still
+    exist and share the same `ConversationView` / `PeopleSearch`
+    components). Collapsible, remembers open/closed in localStorage,
+    reserves space beside the page on wide screens and overlays as a
+    drawer on narrow ones. Unread dots/badge are **client-side only**
+    (each browser remembers the newest message it has shown per
+    conversation), so they don't sync across devices.
   - New track search (`/catalog/tracks/search`) powers the song picker.
   - Production CSRF hardening: the session cookie is `SameSite=None`
     there, so body-less POSTs (follow, like) from a hostile page would

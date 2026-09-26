@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { ActivityItem, ConversationSummary, MessageItem, UserSearchResult } from "../types";
+import type { ActivityItem, ConversationSummary, MessageItem } from "../types";
 import { timeAgo } from "../utils";
 import { ActivityRow } from "../components/ActivityRow";
 import { Avatar } from "../components/Avatar";
+import { PeopleSearch } from "../components/PeopleSearch";
 
 type Tab = "activity" | "messages" | "find";
 
@@ -27,7 +28,7 @@ export function Friends() {
       </div>
       {tab === "activity" && <FeedTab onFind={() => setTab("find")} />}
       {tab === "messages" && <MessagesTab />}
-      {tab === "find" && <FindTab />}
+      {tab === "find" && <PeopleSearch />}
     </div>
   );
 }
@@ -93,56 +94,6 @@ function MessagesTab() {
           </span>
           <span className="muted">{timeAgo(conversation.last_message_at)}</span>
         </Link>
-      ))}
-    </div>
-  );
-}
-
-const DEBOUNCE_MS = 300;
-
-function FindTab() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<UserSearchResult[] | null>(null);
-
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      setResults(null);
-      return;
-    }
-    const timeout = setTimeout(() => {
-      api.get<UserSearchResult[]>(`/users/search?q=${encodeURIComponent(trimmed)}`).then(setResults);
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timeout);
-  }, [query]);
-
-  async function toggle(person: UserSearchResult) {
-    if (person.is_following) await api.delete(`/users/${person.id}/follow`);
-    else await api.post(`/users/${person.id}/follow`);
-    setResults((current) =>
-      current ? current.map((r) => (r.id === person.id ? { ...r, is_following: !r.is_following } : r)) : current,
-    );
-  }
-
-  return (
-    <div className="find-people">
-      <input
-        type="text"
-        placeholder="Search people by name…"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        autoFocus
-      />
-      {results && results.length === 0 && <p className="muted">Nobody found.</p>}
-      {results?.map((person) => (
-        <div key={person.id} className="person-row">
-          <Link to={`/users/${person.id}`} className="person-link">
-            <Avatar user={person} size={40} /> {person.display_name}
-          </Link>
-          <button className={person.is_following ? "" : "button"} onClick={() => toggle(person)}>
-            {person.is_following ? "Following ✓" : "Follow"}
-          </button>
-        </div>
       ))}
     </div>
   );
