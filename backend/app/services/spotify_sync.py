@@ -203,7 +203,7 @@ async def get_top_tracks_for_user(db: AsyncSession, user: User, time_range: str 
                 "spotify_id": track.spotify_id,
                 "name": track.name,
                 "duration_ms": track.duration_ms,
-                "album": {"id": album.id, "name": album.name, "image_url": album.image_url},
+                "album": {"id": album.id, "spotify_id": album.spotify_id, "name": album.name, "image_url": album.image_url},
                 "artist": {"id": artist.id, "name": artist.name},
             }
         )

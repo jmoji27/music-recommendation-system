@@ -110,7 +110,7 @@ export interface TopTrackCard {
   spotify_id: string;
   name: string;
   duration_ms: number | null;
-  album: { id: number; name: string; image_url: string | null };
+  album: { id: number; spotify_id: string; name: string; image_url: string | null };
   artist: ArtistRef;
 }
 

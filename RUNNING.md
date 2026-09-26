@@ -11,7 +11,11 @@ architecture/design context — this file is just "how do I run it."
 - `backend/.env` filled in (copy from `backend/.env.example`) — needs
   `DATABASE_URL`, `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` (from the
   [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)),
-  `TOKEN_ENCRYPTION_KEY`, `JWT_SECRET`.
+  `TOKEN_ENCRYPTION_KEY`, and `JWT_SECRET` (random, 32+ characters:
+  `python -c "import secrets; print(secrets.token_urlsafe(48))"`).
+  Optional: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+  from Google Cloud Console to enable "Continue with Google" (the button
+  is hidden until they're set).
 - Backend Python deps installed: `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
 - Frontend deps installed: `cd frontend && npm install`
 - Migrations applied: `cd backend && source .venv/bin/activate && alembic upgrade head`
@@ -63,5 +67,7 @@ Or just `Ctrl+C` in whichever terminal tab is running it.
 
 Visit `http://127.0.0.1:8000/auth/spotify/login` (or click "Connect
 with Spotify" in the frontend) to go through the real OAuth flow.
-Sessions expire after 60 minutes — you'll need to log in again after
-that.
+Sessions renew while you're active and expire 30 days after you log in
+(`SESSION_MAX_AGE_DAYS`). Changing `JWT_SECRET` logs everyone out. After
+pulling new code, run `alembic upgrade head` again and restart uvicorn —
+the `--reload` flag isn't always on, so a stale server keeps the old code.

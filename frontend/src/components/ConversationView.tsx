@@ -97,6 +97,14 @@ export function ConversationView({ conversationId, onBack }: Props) {
     }
   }
 
+  async function blockThem() {
+    if (!thread) return;
+    if (!window.confirm(`Block ${thread.with.display_name}? They won't be able to see or contact you, and this conversation will be hidden.`)) return;
+    await api.post(`/users/${thread.with.id}/block`);
+    setNotFound(true);
+    onBack?.();
+  }
+
   if (notFound) return <p className="error">Conversation not found.</p>;
   if (!thread || !user) return <p className="muted">Loading…</p>;
 
@@ -113,6 +121,9 @@ export function ConversationView({ conversationId, onBack }: Props) {
         <Link to={`/users/${thread.with.id}`} className="person-link">
           <Avatar user={thread.with} size={32} /> <strong>{thread.with.display_name}</strong>
         </Link>
+        <button className="link-button" onClick={blockThem} title="Block this person">
+          Block
+        </button>
       </header>
 
       <div className="thread">

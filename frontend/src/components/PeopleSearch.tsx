@@ -42,6 +42,12 @@ export function PeopleSearch({ onMessage, compact }: Props) {
     );
   }
 
+  async function block(person: UserSearchResult) {
+    if (!window.confirm(`Block ${person.display_name}? They won't be able to see or contact you.`)) return;
+    await api.post(`/users/${person.id}/block`);
+    setResults((current) => (current ? current.filter((r) => r.id !== person.id) : current));
+  }
+
   return (
     <div className={compact ? "find-people find-people-compact" : "find-people"}>
       <input
@@ -66,6 +72,9 @@ export function PeopleSearch({ onMessage, compact }: Props) {
             )}
             <button className={person.is_following ? "" : "button"} onClick={() => toggle(person)}>
               {person.is_following ? "Following ✓" : "Follow"}
+            </button>
+            <button onClick={() => block(person)} title="Block this person" aria-label={`Block ${person.display_name}`}>
+              🚫
             </button>
           </span>
         </div>

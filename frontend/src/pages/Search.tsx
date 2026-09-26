@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { AlbumSummary } from "../types";
 import { AlbumCard } from "../components/AlbumCard";
@@ -6,7 +7,8 @@ import { AlbumCard } from "../components/AlbumCard";
 const DEBOUNCE_MS = 350;
 
 export function Search() {
-  const [query, setQuery] = useState("");
+  const [params] = useSearchParams();
+  const [query, setQuery] = useState(params.get("q") ?? "");
   const [results, setResults] = useState<AlbumSummary[] | null>(null);
   const [searching, setSearching] = useState(false);
 

@@ -38,14 +38,21 @@ DATABASE_URL=<production-url-with-+asyncpg> .venv/bin/alembic upgrade head
 
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"`
+  (behind Render's proxy this makes rate limits see real client IPs)
 - Environment variables (Render's dashboard, not `.env` — nothing
   secret is ever committed):
   - `DATABASE_URL` (from step 1)
   - `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
   - `SPOTIFY_REDIRECT_URI` = `https://<your-render-app>.onrender.com/auth/spotify/callback`
   - `TOKEN_ENCRYPTION_KEY`, `JWT_SECRET` (generate new ones for
-    production — don't reuse your local dev values)
+    production — don't reuse your local dev values; the app refuses to
+    start in production with a weak `JWT_SECRET`)
+  - Optional Google login: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+    `GOOGLE_REDIRECT_URI` = `https://<your-render-app>.onrender.com/auth/google/callback`
+    (also add it under Authorized redirect URIs in Google Cloud Console)
+  - Rate limiting is in-memory per process: keep one worker, or move it
+    to Redis before scaling out. API docs (`/docs`) are disabled in production.
   - `FRONTEND_ORIGIN` = `https://<your-vercel-app>.vercel.app`
   - `ENVIRONMENT=production`
 
