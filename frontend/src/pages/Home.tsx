@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, googleLoginUrl, spotifyLoginUrl } from "../api/client";
 import type { AlbumConversation, AlbumSummary, ArtistCard as ArtistCardType, HotAlbum, TopTrackCard } from "../types";
@@ -16,16 +17,45 @@ export function Home() {
   return <Dashboard hasSpotify={user.has_spotify} />;
 }
 
+const LOGIN_ERRORS: Record<string, string> = {
+  not_configured: "That sign-in option isn't set up on this server yet.",
+  expired: "Your sign-in link expired. Please try again.",
+  not_allowlisted:
+    "This Spotify account isn't on the tester list yet (Spotify limits how many accounts can connect). Try Google instead, or ask to be added.",
+  failed: "Sign-in didn't complete. Please try again.",
+};
+
 function Landing() {
+  const [params, setParams] = useSearchParams();
+  const errorCode = params.get("login_error");
+  const errorMessage = errorCode ? (LOGIN_ERRORS[errorCode] ?? LOGIN_ERRORS.failed) : null;
+  const [providers, setProviders] = useState<{ spotify: boolean; google: boolean } | null>(null);
+
+  useEffect(() => {
+    api.get<{ spotify: boolean; google: boolean }>("/auth/providers").then(setProviders).catch(() => {});
+  }, []);
+
+  // Only hide a button once we positively know it's unconfigured.
+  const spotifyOn = providers?.spotify ?? true;
+  const googleOn = providers?.google ?? true;
+
   return (
     <div className="landing">
+      {errorMessage && (
+        <div className="login-error" role="alert">
+          {errorMessage}{" "}
+          <button className="link-button" onClick={() => setParams({}, { replace: true })}>
+            Dismiss
+          </button>
+        </div>
+      )}
       <h1>Understand your music taste.</h1>
       <p>
         Rate, review, and comment on music — and see what other people think of what you listen to.
       </p>
 
       <div className="login-choices">
-        <div className="login-choice">
+        {spotifyOn && <div className="login-choice">
           <a className="button" href={spotifyLoginUrl}>
             Connect with Spotify
           </a>
@@ -33,8 +63,8 @@ function Landing() {
             Get personalized recommendations, your top tracks/artists/albums, and what you're
             currently listening to — based on your real Spotify taste.
           </p>
-        </div>
-        <div className="login-choice">
+        </div>}
+        {googleOn && <div className="login-choice">
           <a className="button button-secondary" href={googleLoginUrl}>
             Continue with Google
           </a>
@@ -42,7 +72,7 @@ function Landing() {
             Create an account to search, rate, review, and comment — no personalized
             recommendations though, since we won't have your listening data.
           </p>
-        </div>
+        </div>}
       </div>
       <p className="muted login-note">
         Due to Spotify API limitations, only a small number of Spotify accounts can be connected

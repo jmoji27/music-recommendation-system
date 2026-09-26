@@ -5,21 +5,31 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
+import httpx
+
+from app.api.login_errors import EXPIRED, FAILED, NOT_ALLOWLISTED, NOT_CONFIGURED, login_error_redirect
 from app.config import settings
 from app.cookies import cookie_kwargs
 from app.db import get_db
+from app.ratelimit import auth_limit
 from app.models.user import User
 from app.security import create_oauth_state, create_session_token, encrypt_token, verify_oauth_state
 from app.services import spotify
 
 router = APIRouter(prefix="/auth/spotify", tags=["auth"])
 
+logger = logging.getLogger(__name__)
+
 _OAUTH_STATE_COOKIE = "oauth_state"
 _SESSION_COOKIE = "session"
 
 
-@router.get("/login")
+@router.get("/login", dependencies=[Depends(auth_limit)])
 async def login() -> RedirectResponse:
+    if not (settings.spotify_client_id and settings.spotify_client_secret):
+        return login_error_redirect("spotify", NOT_CONFIGURED)
     state = create_oauth_state()
     response = RedirectResponse(spotify.build_authorize_url(state))
     # Double-submit cookie pattern: the callback checks this cookie
@@ -32,7 +42,7 @@ async def login() -> RedirectResponse:
     return response
 
 
-@router.get("/callback")
+@router.get("/callback", dependencies=[Depends(auth_limit)])
 async def callback(
     code: str,
     state: str,
@@ -40,10 +50,19 @@ async def callback(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     if oauth_state is None or oauth_state != state or not verify_oauth_state(state):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired OAuth state")
+        return login_error_redirect("spotify", EXPIRED)
 
-    token_data = await spotify.exchange_code_for_tokens(code)
-    profile = await spotify.get_current_user_profile(token_data["access_token"])
+    try:
+        token_data = await spotify.exchange_code_for_tokens(code)
+        profile = await spotify.get_current_user_profile(token_data["access_token"])
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Spotify login failed (%s)", exc.response.status_code, exc_info=True)
+        # 403 from /me is Development Mode refusing an account that isn't on the tester list.
+        reason = NOT_ALLOWLISTED if exc.response.status_code == 403 else FAILED
+        return login_error_redirect("spotify", reason)
+    except httpx.HTTPError:
+        logger.warning("Spotify login failed (network)", exc_info=True)
+        return login_error_redirect("spotify", FAILED)
 
     user = await db.scalar(select(User).where(User.spotify_id == profile["id"]))
     if user is None:

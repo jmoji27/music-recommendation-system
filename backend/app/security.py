@@ -28,16 +28,39 @@ def decrypt_token(ciphertext: str) -> str:
     return _fernet().decrypt(ciphertext.encode()).decode()
 
 
-def create_session_token(user_id: int) -> str:
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": str(user_id), "exp": expires_at}
+def create_session_token(user_id: int, auth_at: datetime | None = None) -> str:
+    """`auth_at` is when the person actually logged in. It's carried
+    unchanged through every renewal so sessions can be capped at
+    session_max_age_days no matter how active the person is."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
+        "auth_at": int((auth_at or now).timestamp()),
+    }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_session_token(token: str) -> int:
-    """Returns the user id encoded in the token, or raises JWTError."""
-    payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    return int(payload["sub"])
+def decode_session_token(token: str) -> dict:
+    """Returns the verified claims, or raises JWTError — including when the
+    token predates the absolute session cap or lacks `auth_at` entirely."""
+    claims = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    try:
+        claims["user_id"] = int(claims["sub"])
+        claims["auth_at_dt"] = datetime.fromtimestamp(int(claims["auth_at"]), tz=timezone.utc)
+    except (KeyError, ValueError, TypeError):
+        raise JWTError("Malformed session token")
+    if datetime.now(timezone.utc) - claims["auth_at_dt"] > timedelta(days=settings.session_max_age_days):
+        raise JWTError("Session exceeded its maximum age")
+    return claims
+
+
+def should_renew(claims: dict) -> bool:
+    """Renew once less than half the token's lifetime is left, so an active
+    user is re-issued a fresh cookie roughly every half hour instead of
+    being logged out on the hour."""
+    remaining = datetime.fromtimestamp(int(claims["exp"]), tz=timezone.utc) - datetime.now(timezone.utc)
+    return remaining < timedelta(minutes=settings.access_token_expire_minutes) / 2
 
 
 def create_oauth_state() -> str:
@@ -69,6 +92,7 @@ __all__ = [
     "decrypt_token",
     "create_session_token",
     "decode_session_token",
+    "should_renew",
     "create_oauth_state",
     "verify_oauth_state",
     "JWTError",

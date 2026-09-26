@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_optional_user
 from app.db import get_db
+from app.ratelimit import avatar_limit, follow_limit
 from app.models.user import User
 from app.services import profiles
 
@@ -30,7 +31,7 @@ async def update_me(
     return await profiles.get_profile(db, user.id, user)
 
 
-@router.put("/me/avatar")
+@router.put("/me/avatar", dependencies=[Depends(avatar_limit)])
 async def upload_avatar(
     request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -118,7 +119,7 @@ async def get_following(user_id: int, db: AsyncSession = Depends(get_db)) -> lis
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found.")
 
 
-@router.post("/users/{user_id}/follow", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/users/{user_id}/follow", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(follow_limit)])
 async def follow_user(
     user_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> Response:

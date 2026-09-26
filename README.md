@@ -57,6 +57,20 @@ frontend/            React (Vite + TypeScript). src/pages: Home (landing when lo
   is the main risk on any UGC feature).
 - Outbound Spotify calls are cached — top artists/genres don't need to be
   refetched on every page load.
+- `JWT_SECRET` must be a random 32+ character value: the app refuses to
+  start in production with a placeholder, and warns in development.
+  Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+  Rotating it logs everyone out.
+- Sessions slide: the cookie is re-issued while you're active, but every
+  session dies `SESSION_MAX_AGE_DAYS` (30) after the real login.
+- Rate limiting is on by default for every route (app-wide baseline plus
+  stricter limits on auth, catalog, Gemini, messaging, follows, avatars).
+  It is in-memory and per-process — behind several workers or a proxy, move
+  it to Redis and run uvicorn with `--proxy-headers` so client IPs are real.
+- Login failures redirect to `/?login_error=<reason>` rather than showing
+  raw errors; `GET /auth/providers` tells the frontend which login options
+  have credentials configured. Google login needs `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` in `backend/.env`.
 
 ## Local dev setup
 

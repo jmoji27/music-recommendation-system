@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db import get_db
+from app.ratelimit import start_conversation_limit
 from app.models.user import User
 from app.services import messaging
 from app.services.profiles import UserNotFound
@@ -43,7 +44,7 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(code, detail)
 
 
-@router.post("/conversations", status_code=status.HTTP_201_CREATED)
+@router.post("/conversations", status_code=status.HTTP_201_CREATED, dependencies=[Depends(start_conversation_limit)])
 async def start_conversation(
     body: StartConversation, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:

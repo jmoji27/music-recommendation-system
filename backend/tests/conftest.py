@@ -13,6 +13,7 @@ exercise the real Postgres schema/constraints without leaving any data
 behind, even though the endpoints under test call commit().
 """
 
+import pytest
 import pytest_asyncio
 import respx
 from httpx import ASGITransport, AsyncClient, Response
@@ -24,6 +25,27 @@ from app.db import get_db
 from app.main import app
 
 test_engine = create_async_engine(settings.database_url, poolclass=NullPool)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Limiter state is process-global; without this, one test's requests
+    would count against the next test's budget."""
+    from app import ratelimit
+
+    ratelimit.reset_all()
+    yield
+    ratelimit.reset_all()
+
+
+@pytest.fixture(autouse=True)
+def _provider_credentials(monkeypatch):
+    """Login routes refuse to start without credentials; tests mock the
+    provider's HTTP side, so any non-empty values will do."""
+    monkeypatch.setattr(settings, "spotify_client_id", settings.spotify_client_id or "test-spotify-id")
+    monkeypatch.setattr(settings, "spotify_client_secret", settings.spotify_client_secret or "test-spotify-secret")
+    monkeypatch.setattr(settings, "google_client_id", settings.google_client_id or "test-google-id")
+    monkeypatch.setattr(settings, "google_client_secret", settings.google_client_secret or "test-google-secret")
 
 
 @pytest_asyncio.fixture

@@ -921,3 +921,12 @@ button:disabled {
   text-underline-offset: 6px;
   text-decoration-thickness: 2px;
 }
+
+.login-error {
+  margin: 0 auto 1.5rem;
+  max-width: 40rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #b3261e;
+  border-radius: 8px;
+  background: rgba(179, 38, 30, 0.12);
+}

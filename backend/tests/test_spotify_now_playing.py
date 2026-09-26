@@ -29,8 +29,10 @@ async def test_callback_rejects_mismatched_state(client):
     response = await client.get(
         "/auth/spotify/callback",
         params={"code": "irrelevant", "state": "not-a-real-token"},
+        follow_redirects=False,
     )
-    assert response.status_code == 400
+    assert response.status_code == 302
+    assert "login_error=expired" in response.headers["location"]
 
 
 @pytest.mark.asyncio
