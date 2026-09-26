@@ -327,14 +327,18 @@ worth a product decision on whether that should be blocked.
     the requested global Top-50 isn't available (see the Spotify gaps
     section above).
   - **Docked friends panel** (`FriendsPanel`), on every page while logged
-    in: your conversations and an "Add people" search, with chats opening
-    inside the panel (the full `/friends` and `/messages/:id` pages still
-    exist and share the same `ConversationView` / `PeopleSearch`
-    components). Collapsible, remembers open/closed in localStorage,
-    reserves space beside the page on wide screens and overlays as a
-    drawer on narrow ones. Unread dots/badge are **client-side only**
-    (each browser remembers the newest message it has shown per
-    conversation), so they don't sync across devices.
+    in, with three tabs: Messages, Activity (the friends feed), and Add
+    people. Chats open inside the panel. The nav's "Friends" button
+    toggles it (state lives in `FriendsPanelContext`, so the button and
+    the panel share it), and it also has a "Hide ›" control and an
+    edge tab when collapsed. Open/closed is remembered in localStorage;
+    on wide screens the page reflows beside it, on narrow screens it
+    overlays as a drawer and defaults closed. The `/friends` and
+    `/messages/:id` pages still exist (sharing `ConversationView`,
+    `PeopleSearch`, `FriendsFeed`) but the nav no longer links to
+    `/friends`. Unread dots/badge are **client-side only** (each browser
+    remembers the newest message it has shown per conversation), so they
+    don't sync across devices.
   - New track search (`/catalog/tracks/search`) powers the song picker.
   - Production CSRF hardening: the session cookie is `SameSite=None`
     there, so body-less POSTs (follow, like) from a hostile page would

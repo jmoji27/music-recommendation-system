@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useFriendsPanel } from "../context/FriendsPanelContext";
 import type { ConversationSummary, MessageItem, UserSearchResult } from "../types";
 import { getSeen, SEEN_EVENT, timeAgo } from "../utils";
 import { Avatar } from "./Avatar";
+import { FriendsFeed } from "./FriendsFeed";
 import { ConversationView } from "./ConversationView";
 import { PeopleSearch } from "./PeopleSearch";
 import { RecommendPanel } from "./RecommendPanel";
 
-const OPEN_KEY = "friends-panel-open";
 const LIST_POLL_MS = 10000;
 
 type View =
   | { kind: "list" }
   | { kind: "thread"; id: number }
   | { kind: "compose"; person: UserSearchResult };
-type Tab = "messages" | "add";
+type Tab = "messages" | "activity" | "add";
 
 function preview(message: MessageItem | null): string {
   if (!message) return "";
@@ -24,21 +25,11 @@ function preview(message: MessageItem | null): string {
   return message.body ?? "";
 }
 
-function defaultOpen(): boolean {
-  try {
-    const stored = localStorage.getItem(OPEN_KEY);
-    if (stored !== null) return stored === "1";
-  } catch {
-    // fall through to the viewport-based default
-  }
-  return window.innerWidth >= 1100;
-}
-
 /** A docked side panel that stays on every page: your conversations, plus a
  *  way to find and add people. Opening a chat happens inside the panel. */
 export function FriendsPanel() {
   const { user } = useAuth();
-  const [open, setOpen] = useState(defaultOpen);
+  const { open, setOpen } = useFriendsPanel();
   const [tab, setTab] = useState<Tab>("messages");
   const [view, setView] = useState<View>({ kind: "list" });
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -69,17 +60,6 @@ export function FriendsPanel() {
     window.addEventListener(SEEN_EVENT, onSeen);
     return () => window.removeEventListener(SEEN_EVENT, onSeen);
   }, []);
-
-  // The layout leaves room for the panel via a body class (see index.css).
-  useEffect(() => {
-    document.body.classList.toggle("panel-open", open);
-    try {
-      localStorage.setItem(OPEN_KEY, open ? "1" : "0");
-    } catch {
-      // not persisting is fine
-    }
-    return () => document.body.classList.remove("panel-open");
-  }, [open]);
 
   if (!user) return null;
 
@@ -138,6 +118,9 @@ export function FriendsPanel() {
             <button className={tab === "messages" ? "tab active" : "tab"} onClick={() => setTab("messages")}>
               Messages{unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
             </button>
+            <button className={tab === "activity" ? "tab active" : "tab"} onClick={() => setTab("activity")}>
+              Activity
+            </button>
             <button className={tab === "add" ? "tab active" : "tab"} onClick={() => setTab("add")}>
               Add people
             </button>
@@ -177,6 +160,8 @@ export function FriendsPanel() {
                   );
                 })
               ))}
+
+            {tab === "activity" && <FriendsFeed onFind={() => setTab("add")} />}
 
             {tab === "add" && (
               <PeopleSearch compact onMessage={(person) => setView({ kind: "compose", person })} />

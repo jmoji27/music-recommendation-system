@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { ActivityItem, ConversationSummary, MessageItem } from "../types";
+import type { ConversationSummary, MessageItem } from "../types";
 import { timeAgo } from "../utils";
-import { ActivityRow } from "../components/ActivityRow";
 import { Avatar } from "../components/Avatar";
+import { FriendsFeed } from "../components/FriendsFeed";
 import { PeopleSearch } from "../components/PeopleSearch";
 
 type Tab = "activity" | "messages" | "find";
@@ -26,38 +26,10 @@ export function Friends() {
           Find people
         </button>
       </div>
-      {tab === "activity" && <FeedTab onFind={() => setTab("find")} />}
+      {tab === "activity" && <FriendsFeed onFind={() => setTab("find")} />}
       {tab === "messages" && <MessagesTab />}
       {tab === "find" && <PeopleSearch />}
     </div>
-  );
-}
-
-function FeedTab({ onFind }: { onFind: () => void }) {
-  const [feed, setFeed] = useState<ActivityItem[] | null>(null);
-
-  useEffect(() => {
-    api.get<ActivityItem[]>("/me/friends/feed").then(setFeed);
-  }, []);
-
-  if (feed === null) return <p className="muted">Loading…</p>;
-  if (feed.length === 0) {
-    return (
-      <p className="muted">
-        Nothing here yet. Follow some people to see their reviews, comments and likes —{" "}
-        <button className="link-button" onClick={onFind}>
-          find people
-        </button>
-        .
-      </p>
-    );
-  }
-  return (
-    <>
-      {feed.map((item) => (
-        <ActivityRow key={`${item.type}-${item.id}`} item={item} />
-      ))}
-    </>
   );
 }
 
