@@ -88,6 +88,50 @@ def album_summary(album: Album, artist: Artist) -> dict:
     }
 
 
+def track_summary(track: Track, artist: Artist, album: Album | None) -> dict:
+    return {
+        "id": track.id,
+        "spotify_id": track.spotify_id,
+        "name": track.name,
+        "duration_ms": track.duration_ms,
+        "artist": {"id": artist.id, "name": artist.name},
+        "album": (
+            {"id": album.id, "spotify_id": album.spotify_id, "name": album.name, "image_url": album.image_url}
+            if album is not None
+            else None
+        ),
+    }
+
+
+async def _cache_full_track(db: AsyncSession, track_data: dict) -> tuple[Track, Artist, Album]:
+    artist = await _get_or_create_artist(db, track_data["artists"][0])
+    album = await _get_or_create_album(db, track_data["album"], artist)
+    track = await _get_or_create_track(db, track_data, artist, album)
+    return track, artist, album
+
+
+async def search_tracks(db: AsyncSession, query: str) -> list[dict]:
+    """Public catalog track search (app-level token), caching results —
+    used by the "recommend a song" picker."""
+    results = await spotify.search_tracks(query)
+    summaries = []
+    for track_data in results:
+        track, artist, album = await _cache_full_track(db, track_data)
+        summaries.append(track_summary(track, artist, album))
+    await db.commit()
+    return summaries
+
+
+async def ensure_track_cached(db: AsyncSession, spotify_track_id: str) -> Track:
+    existing = await db.scalar(select(Track).where(Track.spotify_id == spotify_track_id))
+    if existing is not None:
+        return existing
+    track_data = await spotify.get_track(spotify_track_id)
+    track, _, _ = await _cache_full_track(db, track_data)
+    await db.commit()
+    return track
+
+
 async def search_albums(db: AsyncSession, query: str) -> list[dict]:
     """Searches Spotify's catalog and caches whatever comes back. Public
     catalog data — no user/session needed, uses the app-level token.

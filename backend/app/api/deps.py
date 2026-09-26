@@ -22,3 +22,19 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
+
+
+async def get_optional_user(
+    session: str | None = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Like get_current_user, but anonymous (or a bad/expired session)
+    just yields None — for public pages that show a bit more to logged-in
+    viewers, like "are you following this person"."""
+    if session is None:
+        return None
+    try:
+        user_id = decode_session_token(session)
+    except JWTError:
+        return None
+    return await db.get(User, user_id)

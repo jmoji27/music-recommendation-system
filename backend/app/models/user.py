@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, String, func
+from sqlalchemy import CheckConstraint, DateTime, LargeBinary, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -26,6 +26,16 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(320), unique=True)
     avatar_url: Mapped[str | None] = mapped_column(String(512))
 
+    # A user-uploaded picture overrides avatar_url (the Spotify/Google
+    # photo) when present. Stored in Postgres, not on disk, so it survives
+    # free-tier hosts with ephemeral filesystems; size-capped at upload.
+    # avatar_data is deferred: get_current_user loads a User on every
+    # request and shouldn't drag up to 200KB along each time. Only the
+    # avatar endpoint loads it (with undefer). avatar_content_type is
+    # non-null exactly when avatar_data is, so it doubles as the flag.
+    avatar_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    avatar_content_type: Mapped[str | None] = mapped_column(String(64))
+
     # Spotify OAuth tokens — encrypted at rest at the application layer
     # before being written here (never store plaintext refresh tokens).
     # Only ever populated for users who've connected Spotify.
@@ -38,6 +48,10 @@ class User(Base):
     __table_args__ = (
         CheckConstraint("num_nonnulls(spotify_id, google_id) >= 1", name="user_has_an_identity"),
     )
+
+    @property
+    def has_custom_avatar(self) -> bool:
+        return self.avatar_content_type is not None
 
     @property
     def has_spotify(self) -> bool:

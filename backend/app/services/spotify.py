@@ -179,6 +179,29 @@ async def search_albums(query: str, limit: int = 10) -> list[dict]:
         return response.json()["albums"]["items"]
 
 
+async def search_tracks(query: str, limit: int = 10) -> list[dict]:
+    token = await _get_app_access_token()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/search",
+            params={"q": query, "type": "track", "limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        return response.json()["tracks"]["items"]
+
+
+async def get_track(spotify_track_id: str) -> dict:
+    token = await _get_app_access_token()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{API_BASE}/tracks/{spotify_track_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 async def get_album(spotify_album_id: str) -> dict:
     token = await _get_app_access_token()
     async with httpx.AsyncClient() as client:

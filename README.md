@@ -15,15 +15,19 @@ backend/app/
   api/               auth.py (Spotify OAuth + logout), deps.py (current-user dependency),
                       catalog.py (public search/album lookup), playback.py (now-playing,
                       top-tracks/albums/artists), interactions.py (reviews/comments/likes),
-                      users.py (GET /me profile)
+                      social.py (profiles, follows, avatars, friends feed),
+                      messaging.py (song-recommendation conversations), taste.py,
+                      trending.py, auth_google.py, users.py (GET /me)
   services/          spotify.py (raw API client), token_service.py (refresh),
-                      spotify_sync.py (Spotify JSON -> cached rows), interactions.py
+                      spotify_sync.py (Spotify JSON -> cached rows), interactions.py,
+                      profiles.py, messaging.py, taste.py, recommendations.py
   security.py        Fernet token encryption, session JWT, signed OAuth state
   models/            SQLAlchemy models (see Data model below)
 
 frontend/            React (Vite + TypeScript). src/pages: Home (landing when logged
                      out, dashboard cards when logged in), Search, AlbumDetail
-                     (tracklist + reviews/comments/likes). src/context/AuthContext
+                     (tracklist + reviews/comments/likes), Taste, Profile, Friends,
+                     Conversation. src/context/AuthContext
                      checks GET /me on load. Talks to the backend via fetch with
                      credentials: "include" (cookie-based session).
 ```
@@ -31,9 +35,9 @@ frontend/            React (Vite + TypeScript). src/pages: Home (landing when lo
 - **Database:** PostgreSQL (relational — the social graph and ratings/reviews
   have real referential-integrity needs). SQLAlchemy (async) + Alembic
   migrations.
-- **Auth:** Spotify OAuth is the only login method — you need Spotify
-  connected for the app to be useful anyway, so there's no separate
-  password system to secure.
+- **Auth:** Google or Spotify OAuth — no password system to secure.
+  Spotify is capped at a handful of accounts in Development Mode, so
+  Google is the uncapped path; Spotify adds personalized data on top.
 - **Feed:** fan-out-on-read (compute a followed user's recent activity at
   request time) rather than fan-out-on-write. Simple and correct at
   portfolio scale; revisit with a queue + precomputed feeds if this ever
@@ -298,6 +302,46 @@ worth a product decision on whether that should be blocked.
   failed) until `respx` was upgraded to `0.23.1` too. Worth knowing:
   installing an unrelated package can break testing infrastructure via
   a shared transitive dependency.
+
+- **Profiles, friends, and song-recommendation conversations**
+  (`app/services/profiles.py`, `messaging.py`; pages `/profile`,
+  `/users/:id`, `/friends`, `/messages/:id`):
+  - "Friends" = people you follow (Letterboxd model, no mutual-request
+    step). Friends feed shows their reviews/comments/likes from *our own*
+    data — deliberately not live Spotify now-playing, which would only
+    work for the few Spotify-linked accounts and expose listening without
+    a per-friend opt-in.
+  - A conversation can only be started by recommending a song to
+    someone you follow; after that either side can send text or more
+    songs. The recipient doesn't need to follow back. Only the two
+    participants can read/write a conversation — anyone else gets the
+    same 404 as a nonexistent id (mutation-tested: breaking either the
+    participant check or the follow gate fails a test).
+  - Avatars: uploads are stored in Postgres (survives ephemeral free-tier
+    disks), capped at 200KB, type decided from the file's magic bytes
+    rather than the client's header, SVG rejected (can carry script),
+    served with `nosniff`. The blob column is `deferred` so it isn't
+    loaded on every authenticated request. Falls back to the
+    Spotify/Google photo.
+  - "What to comment on" on your profile is the most-reviewed albums —
+    the requested global Top-50 isn't available (see the Spotify gaps
+    section above).
+  - New track search (`/catalog/tracks/search`) powers the song picker.
+  - Production CSRF hardening: the session cookie is `SameSite=None`
+    there, so body-less POSTs (follow, like) from a hostile page would
+    otherwise skip CORS preflight. In production every unsafe request
+    must carry `X-Requested-With: fetch` (the frontend client always
+    sends it), forcing a preflight our CORS allow-list rejects for other
+    origins. Off in development so `/docs` and curl still work.
+
+Known limitations of this feature (not oversights):
+- Messages arrive by **polling** every 4s (paused while the tab is
+  hidden), not WebSockets — simple, and fine at this scale.
+- No unread badges, no message deletion/blocking, and **no rate limiting**
+  on follows/messages yet. The follow gate is the only anti-spam control.
+- `/me/friends/feed` and profile activity resolve each item with a few
+  small queries (N+1) — fine for tens of items, worth batching if a feed
+  ever gets large.
 
 Next steps:
 1. Cache-retention job (see above) — blocked on picking a hosting/

@@ -6,7 +6,9 @@ from app.api.auth import router as auth_router
 from app.api.auth_google import router as auth_google_router
 from app.api.catalog import router as catalog_router
 from app.api.interactions import router as interactions_router
+from app.api.messaging import router as messaging_router
 from app.api.playback import router as playback_router
+from app.api.social import router as social_router
 from app.api.taste import router as taste_router
 from app.api.trending import router as trending_router
 from app.api.users import router as users_router
@@ -22,6 +24,28 @@ async def spotify_not_connected_handler(request: Request, exc: SpotifyNotConnect
         status_code=403,
         content={"detail": "Connect your Spotify account to see this — accounts created with Google don't have Spotify data."},
     )
+
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def require_custom_header_in_production(request: Request, call_next):
+    """CSRF defense for production. There the session cookie is
+    SameSite=None (frontend and backend are on different sites), so a
+    hostile page could make a logged-in visitor's browser send body-less
+    POSTs (follow, like...) that skip CORS preflight as "simple"
+    requests. Requiring a custom header on unsafe methods forces a
+    preflight, which our CORS allow-list rejects for any other origin.
+    Off in development so /docs "Try it out" and curl keep working.
+    """
+    if (
+        settings.is_production
+        and request.method in _UNSAFE_METHODS
+        and request.headers.get("x-requested-with") != "fetch"
+    ):
+        return JSONResponse(status_code=403, content={"detail": "Missing X-Requested-With header."})
+    return await call_next(request)
+
 
 # allow_credentials=True is required for the session cookie to be sent
 # on cross-origin requests from the frontend dev server; that requires
@@ -39,7 +63,9 @@ app.include_router(auth_router)
 app.include_router(auth_google_router)
 app.include_router(catalog_router)
 app.include_router(interactions_router)
+app.include_router(messaging_router)
 app.include_router(playback_router)
+app.include_router(social_router)
 app.include_router(taste_router)
 app.include_router(trending_router)
 app.include_router(users_router)

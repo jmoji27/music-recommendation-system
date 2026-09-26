@@ -3,7 +3,78 @@ export interface UserProfile {
   display_name: string;
   email: string | null;
   avatar_url: string | null;
+  avatar: string | null;
   has_spotify: boolean;
+}
+
+export interface UserBrief {
+  id: number;
+  display_name: string;
+  avatar: string | null;
+}
+
+export interface FullProfile extends UserBrief {
+  follower_count: number;
+  following_count: number;
+  review_count: number;
+  is_following: boolean;
+  is_me: boolean;
+  joined_at: string;
+}
+
+export interface UserSearchResult extends UserBrief {
+  is_following: boolean;
+}
+
+export interface ActivityItem {
+  id: number;
+  type: "review" | "comment" | "like";
+  created_at: string;
+  actor?: UserBrief;
+  album: AlbumSummary | null;
+  stars?: number | null;
+  content?: string | null;
+  review_id?: number;
+  review_author?: UserBrief;
+  target_type?: "review" | "comment";
+  target_excerpt?: string | null;
+  target_author?: UserBrief;
+}
+
+export interface UserActivity {
+  reviews: ActivityItem[];
+  comments: ActivityItem[];
+  likes: ActivityItem[];
+}
+
+export interface TrackSummary {
+  id: number;
+  spotify_id: string;
+  name: string;
+  duration_ms: number | null;
+  artist: { id: number; name: string };
+  album: { id: number; spotify_id: string; name: string; image_url: string | null } | null;
+}
+
+export interface MessageItem {
+  id: number;
+  sender_id: number;
+  body: string | null;
+  track: TrackSummary | null;
+  created_at: string;
+}
+
+export interface ConversationSummary {
+  id: number;
+  with: UserBrief;
+  last_message: MessageItem | null;
+  last_message_at: string;
+}
+
+export interface ConversationThread {
+  conversation_id: number;
+  with: UserBrief;
+  messages: MessageItem[];
 }
 
 export interface ArtistRef {
