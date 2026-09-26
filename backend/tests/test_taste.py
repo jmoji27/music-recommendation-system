@@ -102,3 +102,38 @@ async def test_taste_summary_classifies_via_gemini_when_spotify_genres_empty(cli
 
     artist = await db_session.scalar(select(Artist).where(Artist.spotify_id == "b1"))
     assert artist.genres == ["hyperpop"]  # persisted, not just returned in this response
+
+
+@pytest.mark.asyncio
+async def test_taste_summary_survives_gemini_failure(client):
+    """Verified live: hitting Gemini's free-tier rate limit (20
+    requests/day for gemini-3.8-flash) crashed this whole endpoint with
+    a raw 500 before genre_classification.py caught it — /me/taste-summary
+    loads automatically on every visit to the Taste page, so a Gemini
+    outage must degrade to empty genre data, not take the page down.
+    """
+    await log_in_test_user(client, spotify_id="taste_user_3")
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post("https://accounts.spotify.com/api/token").mock(
+            return_value=Response(200, json={"access_token": "t", "token_type": "Bearer", "expires_in": 3600})
+        )
+        mock.get("https://api.spotify.com/v1/me/top/artists").mock(
+            return_value=Response(
+                200,
+                json={"items": [{"id": "b2", "name": "Another Artist", "genres": [], "images": []}]},
+            )
+        )
+        mock.get("https://api.spotify.com/v1/me/player/recently-played").mock(
+            return_value=Response(200, json={"items": []})
+        )
+
+        with patch("app.services.genre_classification.settings.gemini_api_key", "fake-key"):
+            with patch("app.services.genre_classification.genai.Client") as mock_client_cls:
+                mock_client_cls.return_value.aio.interactions.create = AsyncMock(
+                    side_effect=RuntimeError("429 rate limited")
+                )
+                response = await client.get("/me/taste-summary")
+
+    assert response.status_code == 200
+    assert response.json()["genre_counts"] == {}

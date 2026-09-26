@@ -86,5 +86,5 @@ export interface TasteSummary {
 }
 
 export type TasteRecommendation =
-  | { available: false }
+  | { available: false; reason: "not_configured" | "error" }
   | { available: true; summary: string; recommended_genres: string[]; recommended_artists: string[] };

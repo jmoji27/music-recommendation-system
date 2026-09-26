@@ -16,7 +16,11 @@ from tests.conftest import log_in_test_user
 
 
 @pytest.mark.asyncio
-async def test_recommendations_not_available_without_api_key(client):
+async def test_recommendations_not_available_without_api_key(client, monkeypatch):
+    # Explicit, not ambient: this must hold regardless of whether the
+    # developer's real .env happens to have a real key in it (it does,
+    # now — this test broke for exactly that reason before this pin).
+    monkeypatch.setattr("app.services.recommendations.settings.gemini_api_key", "")
     await log_in_test_user(client, spotify_id="rec_user_1")
 
     with respx.mock(assert_all_called=False) as mock:
@@ -32,7 +36,7 @@ async def test_recommendations_not_available_without_api_key(client):
         response = await client.get("/me/recommendations")
 
     assert response.status_code == 200
-    assert response.json() == {"available": False}
+    assert response.json() == {"available": False, "reason": "not_configured"}
 
 
 @pytest.mark.asyncio
@@ -61,3 +65,18 @@ async def test_generate_taste_recommendation_parses_gemini_response(monkeypatch)
     assert result["summary"] == "You love moody, atmospheric guitar music."
     assert result["recommended_genres"] == ["slowcore", "post-rock"]
     assert result["recommended_artists"] == ["Duster", "Codeine"]
+
+
+@pytest.mark.asyncio
+async def test_generate_taste_recommendation_degrades_gracefully_on_gemini_failure(monkeypatch):
+    """Verified live: hitting Gemini's free-tier rate limit (20
+    requests/day) previously crashed this with a raw 500 instead of
+    the graceful {"available": False} every other failure mode gets.
+    """
+    monkeypatch.setattr("app.services.recommendations.settings.gemini_api_key", "fake-key-for-test")
+
+    with patch("app.services.recommendations.genai.Client") as mock_client_cls:
+        mock_client_cls.return_value.aio.interactions.create = AsyncMock(side_effect=RuntimeError("429 rate limited"))
+        result = await generate_taste_recommendation({"shoegaze": 3}, ["Slowdive"])
+
+    assert result == {"available": False, "reason": "error"}

@@ -103,8 +103,20 @@ function RecommendationsPanel() {
         </div>
       )}
 
-      {result && !result.available && (
+      {result && !result.available && result.reason === "not_configured" && (
         <p className="muted">AI recommendations aren't configured yet — coming soon.</p>
+      )}
+
+      {result && !result.available && result.reason === "error" && (
+        <div className="recommendations-placeholder">
+          <p className="error">
+            AI recommendations are temporarily unavailable (the service may be rate-limited) — try again
+            in a bit.
+          </p>
+          <button onClick={generate} disabled={state === "loading"}>
+            {state === "loading" ? "Thinking…" : "Try again"}
+          </button>
+        </div>
       )}
 
       {result && result.available && (
