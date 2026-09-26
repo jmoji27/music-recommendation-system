@@ -14,6 +14,7 @@ from app.models.follow import Follow
 from app.models.interaction import Interaction, InteractionType
 from app.models.spotify_entities import Album, Artist
 from app.models.user import User
+from app.services import blocks
 from app.services.spotify_sync import album_summary
 
 MAX_AVATAR_BYTES = 200 * 1024
@@ -73,8 +74,22 @@ async def _count(db: AsyncSession, stmt) -> int:
     return await db.scalar(stmt) or 0
 
 
+async def _require_not_blocked_either_way(db: AsyncSession, viewer: User | None, user_id: int) -> None:
+    """Someone in a block with the viewer looks exactly like a user who doesn't exist."""
+    if viewer is not None and viewer.id != user_id and user_id in await blocks.hidden_user_ids(db, viewer.id):
+        raise UserNotFound()
+
+
 async def get_profile(db: AsyncSession, user_id: int, viewer: User | None) -> dict:
     user = await _get_user(db, user_id)
+
+    if viewer is not None and await blocks.is_blocked_by(db, viewer.id, user_id):
+        # You blocked them: enough to show the name and an Unblock button, nothing else.
+        profile = user_brief(user)
+        profile.update({"blocked_by_me": True, "is_me": False, "is_following": False})
+        return profile
+    # They blocked you: indistinguishable from a user that doesn't exist.
+    await _require_not_blocked_either_way(db, viewer, user_id)
 
     followers = await _count(db, select(func.count()).select_from(Follow).where(Follow.followed_id == user_id))
     following = await _count(db, select(func.count()).select_from(Follow).where(Follow.follower_id == user_id))
@@ -101,6 +116,7 @@ async def get_profile(db: AsyncSession, user_id: int, viewer: User | None) -> di
             "review_count": reviews,
             "is_following": is_following,
             "is_me": viewer is not None and viewer.id == user_id,
+            "blocked_by_me": False,
             "joined_at": user.created_at,
         }
     )
@@ -141,6 +157,7 @@ async def follow(db: AsyncSession, follower: User, target_id: int) -> None:
     if follower.id == target_id:
         raise CannotFollowSelf()
     await _get_user(db, target_id)
+    await blocks.assert_no_block(db, follower, target_id)
     db.add(Follow(follower_id=follower.id, followed_id=target_id))
     try:
         await db.commit()
@@ -162,20 +179,24 @@ async def is_following(db: AsyncSession, follower_id: int, followed_id: int) -> 
     ) is not None
 
 
-async def list_followers(db: AsyncSession, user_id: int) -> list[dict]:
+async def list_followers(db: AsyncSession, user_id: int, viewer: User | None = None) -> list[dict]:
     await _get_user(db, user_id)
+    await _require_not_blocked_either_way(db, viewer, user_id)
+    hidden = await blocks.hidden_for(db, viewer)
     users = await db.scalars(
         select(User).join(Follow, Follow.follower_id == User.id).where(Follow.followed_id == user_id).order_by(Follow.created_at.desc())
     )
-    return [user_brief(u) for u in users]
+    return [user_brief(u) for u in users if u.id not in hidden]
 
 
-async def list_following(db: AsyncSession, user_id: int) -> list[dict]:
+async def list_following(db: AsyncSession, user_id: int, viewer: User | None = None) -> list[dict]:
     await _get_user(db, user_id)
+    await _require_not_blocked_either_way(db, viewer, user_id)
+    hidden = await blocks.hidden_for(db, viewer)
     users = await db.scalars(
         select(User).join(Follow, Follow.followed_id == User.id).where(Follow.follower_id == user_id).order_by(Follow.created_at.desc())
     )
-    return [user_brief(u) for u in users]
+    return [user_brief(u) for u in users if u.id not in hidden]
 
 
 async def search_users(db: AsyncSession, query: str, viewer: User, limit: int = 20) -> list[dict]:
@@ -184,9 +205,10 @@ async def search_users(db: AsyncSession, query: str, viewer: User, limit: int = 
         return []
     # Escape LIKE wildcards so a search for "100%" is literal.
     escaped = cleaned.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    hidden = await blocks.hidden_user_ids(db, viewer.id)
     users = await db.scalars(
         select(User)
-        .where(User.display_name.ilike(f"%{escaped}%", escape="\\"), User.id != viewer.id)
+        .where(User.display_name.ilike(f"%{escaped}%", escape="\\"), User.id != viewer.id, User.id.not_in(hidden))
         .order_by(User.display_name)
         .limit(limit)
     )
@@ -259,8 +281,19 @@ async def activity_item(db: AsyncSession, it: Interaction, actor: User | None = 
     return item
 
 
-async def get_user_activity(db: AsyncSession, user_id: int, limit: int = 30) -> dict:
+def _touches(item: dict, hidden: set[int]) -> bool:
+    """Does this activity row involve a hidden user besides its actor —
+    e.g. a comment on, or a like of, a blocked person's review?"""
+    for key in ("review_author", "target_author"):
+        if key in item and item[key]["id"] in hidden:
+            return True
+    return False
+
+
+async def get_user_activity(db: AsyncSession, user_id: int, viewer: User | None = None, limit: int = 30) -> dict:
     await _get_user(db, user_id)
+    await _require_not_blocked_either_way(db, viewer, user_id)
+    hidden = await blocks.hidden_for(db, viewer)
     result: dict[str, list[dict]] = {}
     for key, kind in (("reviews", InteractionType.REVIEW), ("comments", InteractionType.COMMENT), ("likes", InteractionType.LIKE)):
         rows = await db.scalars(
@@ -269,18 +302,21 @@ async def get_user_activity(db: AsyncSession, user_id: int, limit: int = 30) -> 
             .order_by(Interaction.created_at.desc())
             .limit(limit)
         )
-        result[key] = [await activity_item(db, row) for row in rows]
+        items = [await activity_item(db, row) for row in rows]
+        result[key] = [item for item in items if not _touches(item, hidden)]
     return result
 
 
 async def get_friends_feed(db: AsyncSession, user: User, limit: int = 40) -> list[dict]:
     """Recent reviews/comments/likes from people you follow, newest first."""
+    hidden = await blocks.hidden_user_ids(db, user.id)
     rows = await db.execute(
         select(Interaction, User)
         .join(User, User.id == Interaction.user_id)
         .join(Follow, Follow.followed_id == Interaction.user_id)
-        .where(Follow.follower_id == user.id)
+        .where(Follow.follower_id == user.id, Interaction.user_id.not_in(hidden))
         .order_by(Interaction.created_at.desc())
         .limit(limit)
     )
-    return [await activity_item(db, interaction, actor) for interaction, actor in rows.all()]
+    items = [await activity_item(db, interaction, actor) for interaction, actor in rows.all()]
+    return [item for item in items if not _touches(item, hidden)]

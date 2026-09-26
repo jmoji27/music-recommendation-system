@@ -2,6 +2,7 @@
 Alembic autogenerate and for anything that calls Base.metadata.create_all.
 """
 
+from app.models.block import Block
 from app.models.conversation import Conversation, Message
 from app.models.follow import Follow
 from app.models.interaction import Interaction, InteractionType
@@ -10,6 +11,7 @@ from app.models.spotify_entities import Album, Artist, Track
 from app.models.user import User
 
 __all__ = [
+    "Block",
     "Conversation",
     "Message",
     "Follow",

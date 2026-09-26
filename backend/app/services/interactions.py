@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.interaction import Interaction, InteractionType
 from app.models.spotify_entities import Album
 from app.models.user import User
+from app.services import blocks
 from app.services.spotify_sync import ensure_album_cached
 
 
@@ -54,18 +55,28 @@ def _user_summary(user: User) -> dict:
     return {"id": user.id, "display_name": user.display_name}
 
 
-async def _like_count(db: AsyncSession, parent_interaction_id: int) -> int:
+async def _like_count(db: AsyncSession, parent_interaction_id: int, hidden: set[int] = frozenset()) -> int:
     return await db.scalar(
         select(func.count())
         .select_from(Interaction)
-        .where(Interaction.type == InteractionType.LIKE, Interaction.parent_interaction_id == parent_interaction_id)
+        .where(
+            Interaction.type == InteractionType.LIKE,
+            Interaction.parent_interaction_id == parent_interaction_id,
+            Interaction.user_id.not_in(hidden),
+        )
     )
 
 
-async def _comment_summaries(db: AsyncSession, review_id: int, viewer: User | None = None) -> list[dict]:
+async def _comment_summaries(
+    db: AsyncSession, review_id: int, viewer: User | None = None, hidden: set[int] = frozenset()
+) -> list[dict]:
     comments = await db.scalars(
         select(Interaction)
-        .where(Interaction.type == InteractionType.COMMENT, Interaction.parent_interaction_id == review_id)
+        .where(
+            Interaction.type == InteractionType.COMMENT,
+            Interaction.parent_interaction_id == review_id,
+            Interaction.user_id.not_in(hidden),
+        )
         .order_by(Interaction.created_at)
     )
     comments = list(comments)
@@ -80,14 +91,16 @@ async def _comment_summaries(db: AsyncSession, review_id: int, viewer: User | No
                 "created_at": comment.created_at,
                 "edited": _edited(comment),
                 "user": _user_summary(author),
-                "like_count": await _like_count(db, comment.id),
+                "like_count": await _like_count(db, comment.id, hidden),
                 "liked_by_me": comment.id in liked,
             }
         )
     return results
 
 
-async def _review_summary(db: AsyncSession, review: Interaction, author: User, viewer: User | None = None) -> dict:
+async def _review_summary(
+    db: AsyncSession, review: Interaction, author: User, viewer: User | None = None, hidden: set[int] = frozenset()
+) -> dict:
     return {
         "id": review.id,
         "stars": review.stars,
@@ -95,9 +108,9 @@ async def _review_summary(db: AsyncSession, review: Interaction, author: User, v
         "created_at": review.created_at,
         "edited": _edited(review),
         "user": _user_summary(author),
-        "like_count": await _like_count(db, review.id),
+        "like_count": await _like_count(db, review.id, hidden),
         "liked_by_me": review.id in await _liked_ids(db, viewer, [review.id]),
-        "comments": await _comment_summaries(db, review.id, viewer),
+        "comments": await _comment_summaries(db, review.id, viewer, hidden),
     }
 
 
@@ -134,16 +147,21 @@ async def list_album_reviews(db: AsyncSession, spotify_album_id: str, viewer: Us
     if album is None:
         return []
 
+    hidden = await blocks.hidden_for(db, viewer)
     reviews = await db.scalars(
         select(Interaction)
-        .where(Interaction.type == InteractionType.REVIEW, Interaction.album_id == album.id)
+        .where(
+            Interaction.type == InteractionType.REVIEW,
+            Interaction.album_id == album.id,
+            Interaction.user_id.not_in(hidden),
+        )
         .order_by(Interaction.created_at.desc())
     )
 
     results = []
     for review in reviews:
         author = await db.get(User, review.user_id)
-        results.append(await _review_summary(db, review, author, viewer))
+        results.append(await _review_summary(db, review, author, viewer, hidden))
     return results
 
 
@@ -167,6 +185,7 @@ async def create_comment(db: AsyncSession, user: User, review_id: int, content: 
     review = await db.get(Interaction, review_id)
     if review is None or review.type != InteractionType.REVIEW:
         raise TargetNotFound()
+    await blocks.assert_no_block(db, user, review.user_id)
 
     comment = Interaction(user_id=user.id, type=InteractionType.COMMENT, parent_interaction_id=review.id, content=content)
     db.add(comment)
@@ -189,6 +208,7 @@ async def like_interaction(db: AsyncSession, user: User, target_id: int, expecte
     target = await db.get(Interaction, target_id)
     if target is None or target.type != expected_type:
         raise TargetNotFound()
+    await blocks.assert_no_block(db, user, target.user_id)
 
     like = Interaction(user_id=user.id, type=InteractionType.LIKE, parent_interaction_id=target.id)
     db.add(like)

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.conversation import Conversation, Message
 from app.models.spotify_entities import Album, Artist, Track
 from app.models.user import User
+from app.services import blocks
 from app.services.profiles import UserNotFound, is_following, user_brief
 from app.services.spotify_sync import ensure_track_cached, track_summary
 
@@ -78,9 +79,17 @@ async def _message_dict(db: AsyncSession, message: Message) -> dict:
     }
 
 
+def _other_id(conversation: Conversation, user: User) -> int:
+    return conversation.user_high_id if conversation.user_low_id == user.id else conversation.user_low_id
+
+
 async def _get_conversation_for(db: AsyncSession, user: User, conversation_id: int) -> Conversation:
+    """A conversation with someone you're in a block with doesn't exist as
+    far as reading goes; it comes back untouched if the block is lifted."""
     conversation = await db.get(Conversation, conversation_id)
     if conversation is None or user.id not in (conversation.user_low_id, conversation.user_high_id):
+        raise ConversationNotFound()
+    if _other_id(conversation, user) in await blocks.hidden_user_ids(db, user.id):
         raise ConversationNotFound()
     return conversation
 
@@ -106,6 +115,7 @@ async def start_conversation(
     recipient = await db.get(User, to_user_id)
     if recipient is None:
         raise UserNotFound()
+    await blocks.assert_no_block(db, sender, to_user_id)
     if not await is_following(db, sender.id, to_user_id):
         raise NotFollowing()
 
@@ -131,6 +141,7 @@ async def send_message(
     db: AsyncSession, sender: User, conversation_id: int, body: str | None, track_spotify_id: str | None
 ) -> dict:
     conversation = await _get_conversation_for(db, sender, conversation_id)
+    await blocks.assert_no_block(db, sender, _other_id(conversation, sender))
     cleaned = _clean_body(body)
 
     track_id = None
@@ -151,9 +162,12 @@ async def list_conversations(db: AsyncSession, user: User) -> list[dict]:
         .where(or_(Conversation.user_low_id == user.id, Conversation.user_high_id == user.id))
         .order_by(Conversation.last_message_at.desc())
     )
+    hidden = await blocks.hidden_user_ids(db, user.id)
     results = []
     for conversation in conversations:
-        other_id = conversation.user_high_id if conversation.user_low_id == user.id else conversation.user_low_id
+        other_id = _other_id(conversation, user)
+        if other_id in hidden:
+            continue
         other = await db.get(User, other_id)
         last = await db.scalar(
             select(Message).where(Message.conversation_id == conversation.id).order_by(Message.id.desc()).limit(1)

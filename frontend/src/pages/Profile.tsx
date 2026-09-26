@@ -50,12 +50,10 @@ function ProfileView({
 
   const load = useCallback(async () => {
     try {
-      const [p, a] = await Promise.all([
-        api.get<FullProfile>(`/users/${targetId}`),
-        api.get<UserActivity>(`/users/${targetId}/activity`),
-      ]);
+      const p = await api.get<FullProfile>(`/users/${targetId}`);
       setProfile(p);
-      setActivity(a);
+      // Someone you blocked is a name and an Unblock button — nothing more.
+      setActivity(p.blocked_by_me ? null : await api.get<UserActivity>(`/users/${targetId}/activity`));
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) setNotFound(true);
     }
@@ -73,8 +71,39 @@ function ProfileView({
     api.get<UserBrief[]>(`/users/${targetId}/${people}`).then(setPeopleList);
   }, [people, targetId]);
 
+  async function unblock() {
+    await api.delete(`/users/${targetId}/block`);
+    await load();
+  }
+
+  async function block() {
+    if (!profile || !window.confirm(`Block ${profile.display_name}? They won't be able to see or contact you, and you'll stop following each other.`)) return;
+    await api.post(`/users/${profile.id}/block`);
+    setShowRecommend(false);
+    setPeople(null);
+    await load();
+  }
+
   if (notFound) return <p className="error">User not found.</p>;
-  if (!profile || !activity) return <p className="muted">Loading…</p>;
+  if (!profile) return <p className="muted">Loading…</p>;
+
+  if (profile.blocked_by_me) {
+    return (
+      <div className="profile-page">
+        <header className="profile-header">
+          <Avatar user={profile} size={96} />
+          <div className="profile-info">
+            <h1>{profile.display_name}</h1>
+            <p className="muted">You've blocked this person. They can't see or contact you, and you can't see them.</p>
+            <div className="row-actions">
+              <button onClick={unblock}>Unblock</button>
+            </div>
+          </div>
+        </header>
+      </div>
+    );
+  }
+  if (!activity) return <p className="muted">Loading…</p>;
 
   async function toggleFollow() {
     if (!profile) return;
@@ -155,6 +184,7 @@ function ProfileView({
                   {profile.is_following && (
                     <button onClick={() => setShowRecommend((v) => !v)}>Recommend a song</button>
                   )}
+                  <button onClick={block}>Block</button>
                 </>
               )
             )}
@@ -185,6 +215,7 @@ function ProfileView({
         </section>
       )}
 
+      {profile.is_me && <BlockedPeople />}
       {profile.is_me && <CommentIdeas />}
 
       <section>
@@ -242,6 +273,38 @@ function NameEditor({ profile, onSaved }: { profile: FullProfile; onSaved: () =>
       <button onClick={() => setEditing(false)}>Cancel</button>
       {error && <p className="error">{error}</p>}
     </div>
+  );
+}
+
+/** People you've blocked, with a way back. Hidden when the list is empty. */
+function BlockedPeople() {
+  const [blocked, setBlocked] = useState<UserBrief[] | null>(null);
+
+  const load = useCallback(() => api.get<UserBrief[]>("/me/blocks").then(setBlocked), []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!blocked || blocked.length === 0) return null;
+  return (
+    <section className="people-list">
+      <h2>Blocked people</h2>
+      {blocked.map((person) => (
+        <div key={person.id} className="person-row">
+          <Link to={`/users/${person.id}`}>
+            <Avatar user={person} size={36} /> {person.display_name}
+          </Link>
+          <button
+            onClick={async () => {
+              await api.delete(`/users/${person.id}/block`);
+              await load();
+            }}
+          >
+            Unblock
+          </button>
+        </div>
+      ))}
+    </section>
   );
 }
 

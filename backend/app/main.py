@@ -15,6 +15,7 @@ from app.api.trending import router as trending_router
 from app.api.users import router as users_router
 from app.config import settings
 from app.ratelimit import baseline_reads, baseline_writes
+from app.services.blocks import BlockedByThem, BlockedByYou
 from app.services.token_service import SpotifyNotConnected
 
 # Interactive docs/OpenAPI describe every endpoint to anyone who finds them;
@@ -35,6 +36,17 @@ async def spotify_not_connected_handler(request: Request, exc: SpotifyNotConnect
         status_code=403,
         content={"detail": "Connect your Spotify account to see this — accounts created with Google don't have Spotify data."},
     )
+
+@app.exception_handler(BlockedByYou)
+async def blocked_by_you_handler(request: Request, exc: BlockedByYou) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"detail": "You've blocked this person. Unblock them first."})
+
+
+@app.exception_handler(BlockedByThem)
+async def blocked_by_them_handler(request: Request, exc: BlockedByThem) -> JSONResponse:
+    # Same shape as a missing resource, so a block isn't revealed to the blocked person.
+    return JSONResponse(status_code=404, content={"detail": "Not found."})
+
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 

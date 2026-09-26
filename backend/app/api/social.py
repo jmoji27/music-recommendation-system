@@ -8,7 +8,7 @@ from app.api.deps import get_current_user, get_optional_user
 from app.db import get_db
 from app.ratelimit import avatar_limit, follow_limit
 from app.models.user import User
-from app.services import profiles
+from app.services import blocks, profiles
 
 router = APIRouter(tags=["social"])
 
@@ -96,25 +96,31 @@ async def get_user_avatar(user_id: int, db: AsyncSession = Depends(get_db)) -> R
 
 
 @router.get("/users/{user_id}/activity")
-async def get_user_activity(user_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_user_activity(
+    user_id: int, viewer: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)
+) -> dict:
     try:
-        return await profiles.get_user_activity(db, user_id)
+        return await profiles.get_user_activity(db, user_id, viewer)
     except profiles.UserNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found.")
 
 
 @router.get("/users/{user_id}/followers")
-async def get_followers(user_id: int, db: AsyncSession = Depends(get_db)) -> list[dict]:
+async def get_followers(
+    user_id: int, viewer: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)
+) -> list[dict]:
     try:
-        return await profiles.list_followers(db, user_id)
+        return await profiles.list_followers(db, user_id, viewer)
     except profiles.UserNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found.")
 
 
 @router.get("/users/{user_id}/following")
-async def get_following(user_id: int, db: AsyncSession = Depends(get_db)) -> list[dict]:
+async def get_following(
+    user_id: int, viewer: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)
+) -> list[dict]:
     try:
-        return await profiles.list_following(db, user_id)
+        return await profiles.list_following(db, user_id, viewer)
     except profiles.UserNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found.")
 
@@ -138,3 +144,29 @@ async def unfollow_user(
 ) -> Response:
     await profiles.unfollow(db, user, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/users/{user_id}/block", status_code=status.HTTP_204_NO_CONTENT)
+async def block_user(
+    user_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> Response:
+    try:
+        await blocks.block_user(db, user, user_id)
+    except blocks.CannotBlockSelf:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can't block yourself.")
+    except blocks.UserNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/users/{user_id}/block", status_code=status.HTTP_204_NO_CONTENT)
+async def unblock_user(
+    user_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> Response:
+    await blocks.unblock_user(db, user, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/me/blocks")
+async def my_blocks(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return [profiles.user_brief(u) for u in await blocks.list_blocked(db, user)]

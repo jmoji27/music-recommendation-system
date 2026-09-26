@@ -19,6 +19,8 @@ export interface FullProfile extends UserBrief {
   review_count: number;
   is_following: boolean;
   is_me: boolean;
+  /** True when you've blocked them; the server then sends only the name/avatar, no counts. */
+  blocked_by_me?: boolean;
   joined_at: string;
 }
 

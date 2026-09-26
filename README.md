@@ -72,6 +72,20 @@ frontend/            React (Vite + TypeScript). src/pages: Home (landing when lo
   have credentials configured. Google login needs `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` in `backend/.env`.
 
+## Blocking
+
+Blocks live in the `blocks` table and are enforced in the backend service
+layer (`backend/app/services/blocks.py`), so no client can bypass them. A
+block is a wall in both directions: neither person can follow, message,
+comment on or like the other, and each disappears from the other's view
+(reviews, comments, likes, profile, follower lists, search, feed,
+conversations). Blocking also removes follows both ways. The blocked person
+isn't told: to them the blocker simply looks like a user that doesn't exist
+(404), while the blocker gets a clear "unblock them first" (403). Unblocking
+restores visibility and conversation history, but not follows.
+`tests/test_blocks.py` drives every one of those paths through the HTTP API
+from both sides.
+
 ## Local dev setup
 
 ```bash
